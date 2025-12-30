@@ -62,12 +62,14 @@ button:hover { transform:scale(1.05); }
 .rank.gold { color:gold; }
 .rank.silver { color:silver; }
 .rank.bronze { color:#cd7f32; }
+.rank.red { color:#cc0000; }
 .title { font-weight:bold; margin:10px 0; }
 .scores { font-size:.9em; color:#aaa; margin:8px 0; }
 .average {
     font-size:1.4em;
     color:#ff0;
     text-shadow:0 0 8px rgba(255,255,0,.6);
+    margin-bottom: 14px; /* espacio hacia los links */
 }
 .links a {
     color:#ff6666;
@@ -175,15 +177,19 @@ const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
 
 window.onload = () => {
-    const y = document.getElementById('year');
-    for (let i = 2025; i >= 1990; i--) {
+    const y = document.getElementById('year'); // ← ESTA LÍNEA FALTABA
+    const currentYear = new Date().getFullYear();
+
+    for (let i = currentYear; i >= 1990; i--) {
         const o = document.createElement('option');
         o.value = i;
         o.textContent = i;
         y.appendChild(o);
     }
-    y.value = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0); // Año actual o próximo
+
+    y.value = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0);
 };
+
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
@@ -222,7 +228,14 @@ async function fetchSeasonMAL(year, season) {
     while (animes.length < 40 && page <= 5) {
         const res = await fetch(`https://api.jikan.moe/v4/seasons/${year}/${season}?order_by=score&sort=desc&page=${page}&limit=25`);
         const data = await res.json();
-        animes = animes.concat(data.data.filter(a => a.score));
+        animes = animes.concat(
+  data.data.filter(a =>
+    a.score &&
+    a.type === "TV" || (a.type === "ONA" && a.episodes >= 6)
+
+  )
+);
+
         page++;
         await delay(400);
     }
@@ -314,7 +327,11 @@ function renderSkeletons() {
 function renderCard(anime, index) {
     const card = document.createElement('div');
     card.className = 'anime-card';
-    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+    const rankClass =
+    index === 0 ? 'gold' :
+    index === 1 ? 'silver' :
+    index === 2 ? 'bronze' :
+    'red';
 
     // Score AniList: automático, manual o N/A
     let alScore = anime.al;
@@ -323,7 +340,7 @@ function renderCard(anime, index) {
     }
     const hasAlId = anime.al_id !== undefined;
     const finalAlScore = alScore || 'N/A';
-    const sources = alScore ? 2 : 1;
+   
 
     // Promedio actualizado con score manual si existe
     const avg = alScore ? ((parseFloat(anime.mal) + parseFloat(alScore)) / 2).toFixed(2) : parseFloat(anime.mal);
@@ -341,7 +358,7 @@ function renderCard(anime, index) {
                 ? `<span class="al-score" onclick="editAlScore(${anime.mal_id}, this)">${finalAlScore} (editar)</span>`
                 : `<span>${finalAlScore}</span>`
         }
-        <small>(${sources} fuente${sources > 1 ? 's' : ''})</small>
+        
     </div>
     <div class="average">⭐ ${avg}</div>
     <div class="links">
