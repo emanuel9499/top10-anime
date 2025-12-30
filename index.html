@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top 10 Animes por Temporada (MAL + AniList)</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background:#000;
+    color:#fff;
+    text-align:center;
+    margin:0;
+    padding:20px;
+}
+h1 {
+    color:#cc0000;
+    font-size:2.6em;
+    text-shadow:0 0 10px rgba(204,0,0,.5);
+}
+.controls { margin:30px auto; }
+select, button {
+    padding:12px;
+    font-size:1.05em;
+    margin:10px;
+    border-radius:8px;
+    border:2px solid #cc0000;
+    background:#111;
+    color:#fff;
+}
+button {
+    cursor:pointer;
+    background:linear-gradient(45deg,#cc0000,#ff3333);
+}
+button:hover { transform:scale(1.05); }
+.grid {
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:25px;
+    max-width:1400px;
+    margin:40px auto;
+}
+.anime-card {
+    background:#111;
+    border-radius:15px;
+    padding:15px;
+    box-shadow:0 0 20px rgba(204,0,0,.4);
+    transition:.3s;
+}
+.anime-card:hover {
+    transform:translateY(-8px) scale(1.03);
+}
+.anime-card img {
+    width:100%;
+    border-radius:12px;
+    border:2px solid #cc0000;
+}
+.rank {
+    font-size:2.1em;
+    font-weight:bold;
+}
+.rank.gold { color:gold; }
+.rank.silver { color:silver; }
+.rank.bronze { color:#cd7f32; }
+.title { font-weight:bold; margin:10px 0; }
+.scores { font-size:.9em; color:#aaa; margin:8px 0; }
+.average {
+    font-size:1.4em;
+    color:#ff0;
+    text-shadow:0 0 8px rgba(255,255,0,.6);
+}
+.links a {
+    color:#ff6666;
+    margin:0 8px;
+    text-decoration:none;
+}
+.links a:hover { text-decoration:underline; }
+
+/* Edición manual */
+.al-score {
+    cursor: pointer;
+    color: #ff6666;
+    font-weight: bold;
+}
+.al-score:hover {
+    text-decoration: underline;
+}
+.edit-input {
+    width: 60px;
+    padding: 4px;
+    background: #222;
+    color: #fff;
+    border: 1px solid #cc0000;
+    border-radius: 4px;
+    text-align: center;
+}
+
+/* Barra de progreso */
+.progress-container {
+    width: 60%;
+    max-width: 800px;
+    margin: 30px auto;
+    background: #222;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0 15px rgba(204,0,0,.6);
+    display: none;
+}
+.progress-bar {
+    width: 0%;
+    height: 30px;
+    background: linear-gradient(90deg, #cc0000, #ff4444);
+    border-radius: 10px;
+    transition: width 0.4s ease;
+    position: relative;
+}
+.progress-text {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    line-height: 30px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 1px 1px 3px black;
+}
+
+.skeleton {
+    height:320px;
+    border-radius:15px;
+    background:linear-gradient(90deg,#111,#222,#111);
+    animation:pulse 1.5s infinite;
+}
+@keyframes pulse {
+    0% { background-position:0% }
+    100% { background-position:200% }
+}
+@media(max-width:1200px){ .grid{grid-template-columns:repeat(3,1fr);} }
+@media(max-width:800px){ 
+    .grid{grid-template-columns:repeat(2,1fr);} 
+    .progress-container { width: 90%; }
+}
+</style>
+</head>
+<body>
+<h1>Top 10 Animes por Temporada</h1>
+<div class="controls">
+    <select id="year"></select>
+    <select id="season">
+        <option value="winter">Winter</option>
+        <option value="spring">Spring</option>
+        <option value="summer">Summer</option>
+        <option value="fall">Fall</option>
+    </select>
+    <button onclick="loadTop10()">Buscar</button>
+</div>
+
+<div id="progressContainer" class="progress-container">
+    <div id="progressBar" class="progress-bar">
+        <div id="progressText" class="progress-text">0%</div>
+    </div>
+</div>
+
+<div id="loading" class="loading">Selecciona temporada y año</div>
+<div id="grid" class="grid"></div>
+
+<script>
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+const MAX_SEASONS_CACHED = 25;
+const BATCH_SIZE = 15;
+
+const grid = document.getElementById('grid');
+const loading = document.getElementById('loading');
+const progressContainer = document.getElementById('progressContainer');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+
+window.onload = () => {
+    const y = document.getElementById('year');
+    for (let i = 2025; i >= 1990; i--) {
+        const o = document.createElement('option');
+        o.value = i;
+        o.textContent = i;
+        y.appendChild(o);
+    }
+    y.value = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0); // Año actual o próximo
+};
+
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+function seasonKey(year, season) { return `SEASON_${year}_${season}`; }
+
+function getSeasonCache(key) {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+        localStorage.removeItem(key);
+        return null;
+    }
+    parsed.lastUsed = Date.now();
+    localStorage.setItem(key, JSON.stringify(parsed));
+    return parsed.data;
+}
+
+function saveSeasonCache(key, data) {
+    localStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), lastUsed: Date.now(), data }));
+    cleanupCache();
+}
+
+function cleanupCache() {
+    const seasons = Object.keys(localStorage)
+        .filter(k => k.startsWith('SEASON_'))
+        .map(k => ({ key: k, ...JSON.parse(localStorage.getItem(k)) }));
+    if (seasons.length <= MAX_SEASONS_CACHED) return;
+    seasons.sort((a, b) => a.lastUsed - b.lastUsed)
+        .slice(0, seasons.length - MAX_SEASONS_CACHED)
+        .forEach(s => localStorage.removeItem(s.key));
+}
+
+async function fetchSeasonMAL(year, season) {
+    let page = 1, animes = [];
+    while (animes.length < 40 && page <= 5) {
+        const res = await fetch(`https://api.jikan.moe/v4/seasons/${year}/${season}?order_by=score&sort=desc&page=${page}&limit=25`);
+        const data = await res.json();
+        animes = animes.concat(data.data.filter(a => a.score));
+        page++;
+        await delay(400);
+    }
+    return animes.slice(0, 40);
+}
+
+async function fetchAniListBatch(malIds) {
+    const results = {};
+    const missingIds = [];
+
+    malIds.forEach(malId => {
+        const cacheKey = `AL_MAL_${malId}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            results[malId] = JSON.parse(cached);
+        } else {
+            missingIds.push(malId);
+        }
+    });
+
+    if (missingIds.length === 0) return results;
+
+    const query = `
+    query ($ids: [Int]) {
+      Page {
+        media(idMal_in: $ids, type: ANIME) {
+          id
+          idMal
+          averageScore
+        }
+      }
+    }`;
+
+    const batches = [];
+    for (let i = 0; i < missingIds.length; i += BATCH_SIZE) {
+        batches.push(missingIds.slice(i, i + BATCH_SIZE));
+    }
+
+    for (const batch of batches) {
+        const variables = { ids: batch };
+        const res = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, variables })
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const mediaList = data.data.Page?.media || [];
+        mediaList.forEach(media => {
+            const result = {
+                id: media.id,
+                score: media.averageScore ? (media.averageScore / 10).toFixed(2) : null
+            };
+            const cacheKey = `AL_MAL_${media.idMal}`;
+            localStorage.setItem(cacheKey, JSON.stringify(result));
+            results[media.idMal] = result;
+        });
+        await delay(500);
+    }
+
+    return results;
+}
+
+function getManualScore(malId) {
+    const key = `MANUAL_AL_${malId}`;
+    const val = localStorage.getItem(key);
+    return val ? parseFloat(val).toFixed(2) : null;
+}
+
+function saveManualScore(malId, score) {
+    const key = `MANUAL_AL_${malId}`;
+    localStorage.setItem(key, score);
+}
+
+function updateProgress(percent) {
+    progressBar.style.width = percent + '%';
+    progressText.textContent = Math.round(percent) + '%';
+}
+
+function renderSkeletons() {
+    grid.innerHTML = '';
+    for (let i = 0; i < 10; i++) {
+        const d = document.createElement('div');
+        d.className = 'skeleton';
+        grid.appendChild(d);
+    }
+}
+
+function renderCard(anime, index) {
+    const card = document.createElement('div');
+    card.className = 'anime-card';
+    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+
+    // Score AniList: automático, manual o N/A
+    let alScore = anime.al;
+    if (!alScore) {
+        alScore = getManualScore(anime.mal_id);
+    }
+    const hasAlId = anime.al_id !== undefined;
+    const finalAlScore = alScore || 'N/A';
+    const sources = alScore ? 2 : 1;
+
+    // Promedio actualizado con score manual si existe
+    const avg = alScore ? ((parseFloat(anime.mal) + parseFloat(alScore)) / 2).toFixed(2) : parseFloat(anime.mal);
+
+    card.innerHTML = `
+    <div class="rank ${rankClass}">#${index + 1}</div>
+    <img src="${anime.image}">
+    <div class="title">${anime.title}</div>
+    <div class="scores">
+        MAL: ${anime.mal} |
+        AniList: 
+        ${alScore 
+            ? `<span>${alScore}</span>`
+            : hasAlId 
+                ? `<span class="al-score" onclick="editAlScore(${anime.mal_id}, this)">${finalAlScore} (editar)</span>`
+                : `<span>${finalAlScore}</span>`
+        }
+        <small>(${sources} fuente${sources > 1 ? 's' : ''})</small>
+    </div>
+    <div class="average">⭐ ${avg}</div>
+    <div class="links">
+        <a href="https://myanimelist.net/anime/${anime.mal_id}" target="_blank">MAL</a>
+        ${hasAlId ? `<a href="https://anilist.co/anime/${anime.al_id}" target="_blank">AniList</a>` : ''}
+    </div>`;
+
+    grid.appendChild(card);
+}
+
+// Función global para editar score
+function editAlScore(malId, element) {
+    const current = element.textContent.trim();
+    const newText = current.includes('editar') ? '' : current;
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = '0.01';
+    input.min = '0';
+    input.max = '10';
+    input.value = newText === 'N/A' || newText === '' ? '' : newText;
+    input.className = 'edit-input';
+
+    input.onblur = () => {
+        let value = input.value.trim();
+        if (value && parseFloat(value) >= 0 && parseFloat(value) <= 10) {
+            value = parseFloat(value).toFixed(2);
+            saveManualScore(malId, value);
+            element.textContent = value;
+        } else {
+            element.textContent = 'N/A (editar)';
+        }
+        input.remove();
+        // Recalcular todo el top con el nuevo promedio
+        loadTop10(); // Recarga para reordenar si cambió el promedio
+    };
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') {
+            element.textContent = 'N/A (editar)';
+            input.remove();
+        }
+    };
+
+    element.textContent = '';
+    element.appendChild(input);
+    input.focus();
+}
+
+async function loadTop10() {
+    const year = parseInt(document.getElementById('year').value);
+    const season = document.getElementById('season').value;
+    const key = seasonKey(year, season);
+    let top10 = getSeasonCache(key);
+
+    if (top10) {
+        grid.innerHTML = '';
+        top10.forEach((anime, i) => renderCard(anime, i));
+        loading.textContent = '';
+        progressContainer.style.display = 'none';
+        return;
+    }
+
+    loading.textContent = 'Cargando temporada...';
+    progressContainer.style.display = 'block';
+    updateProgress(0);
+    renderSkeletons();
+
+    const malList = await fetchSeasonMAL(year, season);
+    updateProgress(30);
+
+    const malIds = malList.map(a => a.mal_id);
+    const alData = await fetchAniListBatch(malIds);
+    updateProgress(90);
+
+    const processed = malList.map(mal => {
+        const malScore = parseFloat(mal.score.toFixed(2));
+        const al = alData[mal.mal_id];
+        let alScore = al?.score || getManualScore(mal.mal_id);
+
+        const avg = alScore ? (malScore + parseFloat(alScore)) / 2 : malScore;
+
+        return {
+            title: mal.title_english || mal.title,
+            image: mal.images.jpg.large_image_url,
+            mal: malScore.toFixed(2),
+            al: alScore,
+            avg,
+            sources: alScore ? 2 : 1,
+            mal_id: mal.mal_id,
+            al_id: al?.id
+        };
+    });
+
+    top10 = processed.sort((a, b) => b.avg - a.avg).slice(0, 10);
+    saveSeasonCache(key, top10);
+
+    grid.innerHTML = '';
+    top10.forEach((anime, i) => renderCard(anime, i));
+    loading.textContent = '';
+    progressContainer.style.display = 'none';
+    updateProgress(100);
+}
+</script>
+</body>
+</html>
