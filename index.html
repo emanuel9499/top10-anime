@@ -455,14 +455,17 @@ async function loadTop10() {
         };
     });
 
-    top10 = processed.sort((a, b) => b.avg - a.avg).slice(0, 10);
-    saveSeasonCache(key, top10);
+    top10 = processed.sort((a, b) => {
+    if (b.avg !== a.avg) return b.avg - a.avg;
 
-    grid.innerHTML = '';
-    top10.forEach((anime, i) => renderCard(anime, i));
-    loading.textContent = '';
-    progressContainer.style.display = 'none';
-    updateProgress(100);
+    const maxA = Math.max(parseFloat(a.mal), parseFloat(a.al || 0));
+    const maxB = Math.max(parseFloat(b.mal), parseFloat(b.al || 0));
+
+    if (maxB !== maxA) return maxB - maxA;
+
+    return a.title.localeCompare(b.title);
+}).slice(0, 10);
+
 }
 </script>
 </body>
