@@ -63,6 +63,8 @@ button:hover { transform:scale(1.05); }
     width:100%;
     border-radius:12px;
     border:2px solid #cc0000;
+    height: 300px;
+    object-fit: cover;
 }
 .rank {
     font-size:2.1em;
@@ -93,7 +95,7 @@ button:hover { transform:scale(1.05); }
 
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 5;   /* 🔥 máximo 5 líneas */
+    -webkit-line-clamp: 4;   /* 🔥 máximo 5 líneas */
 
     overflow: hidden;
 
@@ -169,12 +171,20 @@ button:hover { transform:scale(1.05); }
 }
 
 .skeleton {
-    height:320px;
+    background:#111;
     border-radius:15px;
-    background:linear-gradient(90deg,#111,#222,#111);
-    animation:pulse 1.5s infinite;
+    padding:15px;
+    box-shadow:
+        0 0 15px rgba(204,0,0,.25),
+        0 10px 25px rgba(0,0,0,.6);
+
+    height: 520px; /* 🔥 mismo alto que una card real */
+
+    background: linear-gradient(90deg, #111, #222, #111);
+    background-size: 200% 100%;
+    animation: pulse 1.5s infinite;
 }
-@keyframes pulse {
+frames pulse {
     0% { background-position:0% }
     100% { background-position:200% }
 }
@@ -486,12 +496,20 @@ async function loadTop10() {
     progressContainer.style.display = 'block';
     updateProgress(0);
     renderSkeletons();
+    let fakeProgress = 0;
+const fakeInterval = setInterval(() => {
+    fakeProgress += Math.random() * 4 + 1; // sube lento y natural
+    if (fakeProgress < 85) {
+        updateProgress(fakeProgress);
+    }
+}, 300);
 
     const malList = await fetchSeasonMAL(year, season);
     updateProgress(30);
 
     const malIds = malList.map(a => a.mal_id);
     const alData = await fetchAniListBatch(malIds);
+    clearInterval(fakeInterval);
     updateProgress(90);
 
     const processed = malList.map(mal => {
@@ -523,6 +541,22 @@ async function loadTop10() {
 
     return a.title.localeCompare(b.title);
 }).slice(0, 10);
+
+        // Render
+    grid.innerHTML = '';
+    top10.forEach((anime, i) => renderCard(anime, i));
+
+    // Cache
+    saveSeasonCache(key, top10);
+
+    loading.textContent = '';
+
+    // Cierre visual correcto
+    updateProgress(100);
+    setTimeout(() => {
+        progressContainer.style.display = 'none';
+    }, 300);
+
 
 }
 </script>
