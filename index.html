@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Top 10 Animes por Temporada (MAL + AniList)</title>
 <style>
+
 body {
     font-family: Arial, sans-serif;
     background:#000;
@@ -44,12 +45,19 @@ button:hover { transform:scale(1.05); }
     background:#111;
     border-radius:15px;
     padding:15px;
-    box-shadow: 0 8px 25px rgba(204,0,0,.45);
+    box-shadow:
+        0 0 15px rgba(204,0,0,.25),
+        0 10px 25px rgba(0,0,0,.6);
     transition:.3s;
+
+    display: flex;
+    flex-direction: column;
+    animation: fadeUp .4s ease;
 }
 
+
 .anime-card:hover {
-    transform:translateY(-8px) scale(1.03);
+    transform: translateY(-6px) scale(1.02);
 }
 .anime-card img {
     width:100%;
@@ -60,14 +68,47 @@ button:hover { transform:scale(1.05); }
     font-size:2.1em;
     font-weight:bold;
 }
-.rank.gold { color:gold; }
-.rank.silver { color:silver; }
-.rank.bronze { color:#cd7f32; }
+.rank.gold {
+    color: gold;
+    text-shadow: 0 0 8px gold;
+}
+
+.rank.silver {
+    color: silver;
+    text-shadow: 0 0 6px silver;
+}
+
+.rank.bronze {
+    color: #cd7f32;
+    text-shadow: 0 0 6px #cd7f32;
+}
+
 .rank.red { color:#cc0000; }
-.title { font-weight:bold; margin:10px 0; }
-.scores { font-size:.9em; color:#aaa; margin:8px 0; }
+.title {
+    font-weight: bold;
+    font-size: 1.05em;
+    margin: 10px 0;
+
+    line-height: 1.2em;
+
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;   /* 🔥 máximo 5 líneas */
+
+    overflow: hidden;
+
+    min-height: 6em;        /* 🔥 5 líneas × 1.2em */
+}
+.scores {
+    font-size: 0.85em;
+    color: #aaa;
+    margin: 8px 0;
+
+    min-height: 2.4em; /* 🔥 clave */
+}
+
 .average {
-    font-size:1.4em;
+    font-size:1.6em;
     color:#ff0;
     text-shadow:0 0 8px rgba(255,255,0,.6);
     margin-bottom: 14px; /* espacio hacia los links */
@@ -142,6 +183,20 @@ button:hover { transform:scale(1.05); }
     .grid{grid-template-columns:repeat(2,1fr);} 
     .progress-container { width: 90%; }
 }
+@keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.bottom {
+    margin-top: auto;
+}
+
 </style>
 </head>
 <body>
@@ -361,11 +416,14 @@ function renderCard(anime, index) {
         }
         
     </div>
+    <div class="bottom">
     <div class="average">⭐ ${avg}</div>
     <div class="links">
         <a href="https://myanimelist.net/anime/${anime.mal_id}" target="_blank">MAL</a>
         ${hasAlId ? `<a href="https://anilist.co/anime/${anime.al_id}" target="_blank">AniList</a>` : ''}
-    </div>`;
+    </div>
+</div>
+`;
 
     grid.appendChild(card);
 }
