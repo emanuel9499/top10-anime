@@ -221,6 +221,9 @@ frames pulse {
     </select>
     <button onclick="loadTop10()">Buscar</button>
 </div>
+<div id="updateInfo" style="margin: 15px auto; font-size: 1.1em; color: #ff9999; min-height: 1.5em;">
+    Próxima actualización en: <span id="countdown">--:--:--</span>
+</div>
 
 <div id="progressContainer" class="progress-container">
     <div id="progressBar" class="progress-bar">
@@ -254,6 +257,9 @@ window.onload = () => {
     }
 
     y.value = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0);
+    startCountdown();
+    document.getElementById('year').addEventListener('change', startCountdown);
+    document.getElementById('season').addEventListener('change', startCountdown);
 };
 
 
@@ -549,6 +555,8 @@ const fakeInterval = setInterval(() => {
     // Cache
     saveSeasonCache(key, top10);
 
+    startCountdown();
+
     loading.textContent = '';
 
     // Cierre visual correcto
@@ -558,6 +566,69 @@ const fakeInterval = setInterval(() => {
     }, 300);
 
 
+}
+// Retorna milisegundos restantes hasta que expire el caché de esta temporada
+function getTimeUntilNextUpdate(year, season) {
+    if (!year || !season) return 0;
+    
+    const key = seasonKey(year, season);
+    const raw = localStorage.getItem(key);
+    if (!raw) return CACHE_TTL; // si no hay caché → como si acabara de empezar
+    
+    const parsed = JSON.parse(raw);
+    const expiresAt = parsed.timestamp + CACHE_TTL;
+    const remaining = expiresAt - Date.now();
+    
+    return Math.max(0, remaining);
+}
+
+// Formatea milisegundos a "Xh Ym Zs" o "menos de 1 minuto", etc.
+function formatRemainingTime(ms) {
+    if (ms <= 0) return "¡Ahora! (recarga para actualizar)";
+    
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours   = Math.floor(minutes / 60);
+    
+    const s = seconds % 60;
+    const m = minutes % 60;
+    const h = hours;
+    
+    if (h > 0) {
+        return `${h}h ${m}m ${s}s`;
+    } else if (m > 0) {
+        return `${m}m ${s}s`;
+    } else {
+        return `${s}s`;
+    }
+}
+
+// Inicia y actualiza el countdown cada segundo
+let countdownInterval = null;
+
+function startCountdown() {
+    const year = document.getElementById('year')?.value;
+    const season = document.getElementById('season')?.value;
+    
+    if (!year || !season) {
+        document.getElementById('countdown').textContent = "—";
+        return;
+    }
+    
+    const updateCountdown = () => {
+        const remainingMs = getTimeUntilNextUpdate(year, season);
+        document.getElementById('countdown').textContent = formatRemainingTime(remainingMs);
+        
+        // Opcional: si llega a 0, podrías cambiar color o texto
+        if (remainingMs <= 0) {
+            document.getElementById('updateInfo').style.color = '#66ff66';
+        }
+    };
+    
+    updateCountdown(); // inmediato
+    
+    if (countdownInterval) clearInterval(countdownInterval);
+    countdownInterval = setInterval(updateCountdown, 1000);
 }
 </script>
 </body>
