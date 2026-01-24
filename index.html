@@ -696,19 +696,18 @@ async function loadTop10() {
 
     // Combinar: AniList como base, enriquecer con MAL donde exista
     const enrichedList = aniList.map(ani => {
-        const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+    const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-        return {
-            mal_id: ani.mal_id,
-            title: mal?.title_english || mal?.title || ani.title,
-            image: mal?.images?.jpg?.large_image_url || ani.images.jpg.large_image_url,
-            mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : (ani.score || null),
-            al: ani.averageScore ? (ani.averageScore / 10).toFixed(2) : null,
-            al_id: ani.al_id,
-            type: ani.format,  // AniList usa "format" en vez de "type"
-            // Si necesitas episodes u otros campos, agrégalos aquí
-        };
-    });
+    return {
+        mal_id: ani.mal_id,
+        title: mal?.title_english || mal?.title || ani.title,
+        image: mal?.images?.jpg?.large_image_url || ani.image,
+        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
+        al: ani.score ? ani.score.toFixed(2) : null,  // ← score de AniList
+        al_id: ani.al_id,
+        type: ani.type
+    };
+});
     // ──────────────────────────────
 
     clearInterval(fakeInterval);
