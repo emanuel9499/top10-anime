@@ -206,14 +206,27 @@ frames pulse {
 .bottom {
     margin-top: auto;
 }
+/* Ajustes para que el dropdown quede con la misma altura y estilo */
 #scoreMode {
-    padding: 10px;
-    font-size: 1.05em;
+    padding: 8px 12px;                /* altura similar a checkboxes */
+    font-size: 1.1em;                 /* mismo tamaño de letra que los labels */
     border-radius: 8px;
     border: 2px solid #cc0000;
     background: #111;
     color: #fff;
-    margin-left: 10px;
+    min-height: 38px;                 /* altura aproximada para alinear con labels */
+    cursor: pointer;
+}
+
+#scoreMode option {
+    background: #111;
+    color: #fff;
+}
+
+/* Opcional: hover en el dropdown para que coincida con el botón */
+#scoreMode:hover {
+    border-color: #ff4444;
+    box-shadow: 0 0 8px rgba(204,0,0,0.4);
 }
 
 </style>
@@ -228,13 +241,27 @@ frames pulse {
         <option value="summer">Summer</option>
         <option value="fall">Fall</option>
     </select>
-    <div class="type-filters" style="margin: 15px auto; font-size: 1.1em;">
-    <label><input type="checkbox" id="type-tv" checked disabled> TV</label>
-    <label><input type="checkbox" id="type-ona" checked> ONA</label>
-    <label><input type="checkbox" id="type-movie"> Movie</label>
-    <label><input type="checkbox" id="type-ova"> OVA</label>
-    <label><input type="checkbox" id="type-special"> Special</label>
-</div>
+
+    <!-- Checkboxes + dropdown juntos -->
+    <div style="display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; margin: 15px auto;">
+        <div class="type-filters" style="font-size: 1.1em; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+            <label><input type="checkbox" id="type-tv" checked disabled> TV</label>
+            <label><input type="checkbox" id="type-ona" checked> ONA</label>
+            <label><input type="checkbox" id="type-movie"> Movie</label>
+            <label><input type="checkbox" id="type-ova"> OVA</label>
+            <label><input type="checkbox" id="type-special"> Special</label>
+        </div>
+
+        <!-- Dropdown al lado -->
+        <div style="display: flex; align-items: center; gap: 10px; white-space: nowrap;">
+            <label for="scoreMode" style="font-size: 1.1em;">Mostrar puntajes como:</label>
+            <select id="scoreMode">
+                <option value="normal">Normal (ej: 8.45)</option>
+                <option value="percent">Porcentual (ej: 84.50%)</option>
+            </select>
+        </div>
+    </div>
+
     <button onclick="loadTop10()">Buscar</button>
 </div>
 <div style="margin: 20px auto; font-size: 1.1em;">
