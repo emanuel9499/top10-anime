@@ -775,8 +775,7 @@ async function loadTop10() {
     let top10 = getSeasonCache(key);
 
     if (top10) {
-        grid.innerHTML = '';
-        top10.forEach((anime, i) => renderCard(anime, i));
+        
         loading.textContent = '';
         progressContainer.style.display = 'none';
         return;
