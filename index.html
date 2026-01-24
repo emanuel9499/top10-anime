@@ -803,15 +803,15 @@ for (const id of malIdsToFetch) {
    const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // TÍTULO: Prioridad absoluta a MAL, preferentemente en inglés
-    let title = mal?.title?.english ||           // 1. Inglés de MAL
-                mal?.title ||                    // 2. Título japonés (romaji) de MAL
-                ani.title?.english ||            // 3. Inglés de AniList
-                ani.title?.romaji ||             // 4. Romaji de AniList
-                ani.title?.native ||             // 5. Native (kanji) de AniList
+    // TÍTULO: Prioridad estricta a INGLÉS, luego romaji solo como último recurso
+    let title = mal?.title?.english ||                 // 1. Inglés de MAL (prioridad máxima)
+                ani.title?.english ||                     // 2. Inglés de AniList
+                mal?.title ||                             // 3. Romaji/japonés de MAL
+                ani.title?.romaji ||                      // 4. Romaji de AniList
+                ani.title?.native ||                      // 5. Kanji de AniList
                 "Sin título";
 
-    // IMAGEN: AniList primero, MAL como fallback
+    // IMAGEN: AniList primero, MAL fallback
     let imageUrl = ani.image ||
                    (mal?.images?.jpg?.large_image_url ||
                     'https://via.placeholder.com/300x450?text=Sin+Imagen');
