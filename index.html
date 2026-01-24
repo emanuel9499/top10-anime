@@ -206,6 +206,15 @@ frames pulse {
 .bottom {
     margin-top: auto;
 }
+#scoreMode {
+    padding: 10px;
+    font-size: 1.05em;
+    border-radius: 8px;
+    border: 2px solid #cc0000;
+    background: #111;
+    color: #fff;
+    margin-left: 10px;
+}
 
 </style>
 </head>
@@ -672,57 +681,79 @@ function startCountdown() {
     countdownInterval = setInterval(updateCountdown, 1000);
 }
 // ────────────────────────────────────────────────
-// NUEVO: Sistema de puntajes normal vs porcentual
-let currentScoreMode = localStorage.getItem('scoreMode') || 'normal';
-document.getElementById('scoreMode').value = currentScoreMode;
+// NUEVO: Sistema de puntajes normal vs porcentual (versión corregida y robusta)
 
-document.getElementById('scoreMode').addEventListener('change', function() {
+let currentScoreMode = localStorage.getItem('scoreMode') || 'normal';
+
+// Seteamos el valor inicial del select
+const scoreModeSelect = document.getElementById('scoreMode');
+if (scoreModeSelect) {
+    scoreModeSelect.value = currentScoreMode;
+}
+
+scoreModeSelect?.addEventListener('change', function() {
     currentScoreMode = this.value;
     localStorage.setItem('scoreMode', currentScoreMode);
-    // Si ya hay animes cargados, actualizar solo las cards (sin recargar API)
+    
+    // Si hay cards cargadas (no skeletons), re-renderizamos desde caché
     if (grid.children.length > 0 && !grid.querySelector('.skeleton')) {
-        const cached = getSeasonCache(seasonKey(parseInt(document.getElementById('year').value), document.getElementById('season').value));
-        if (cached) {
-            grid.innerHTML = '';
-            cached.forEach((anime, i) => renderCard(anime, i));
+        const year = parseInt(document.getElementById('year')?.value);
+        const season = document.getElementById('season')?.value;
+        if (year && season) {
+            const cached = getSeasonCache(seasonKey(year, season));
+            if (cached) {
+                grid.innerHTML = '';
+                cached.forEach((anime, i) => renderCard(anime, i));
+            }
         }
     }
 });
 
-// Modificamos renderCard para que respete el modo elegido
+// Override seguro de renderCard (se define DESPUÉS de la función original)
 const originalRenderCard = renderCard;
-window.renderCard = function(anime, index) {
-    originalRenderCard(anime, index); // crea la card como siempre
+
+renderCard = function(anime, index) {
+    // Llamamos a la original para crear la estructura HTML
+    originalRenderCard(anime, index);
     
-    // Ahora modificamos los textos de puntaje en la card que se acaba de crear
+    // Tomamos la última card creada
     const card = grid.lastElementChild;
-    const malSpan = card.querySelector('.scores').children[0]; // "MAL: 8.45 |"
-    const alSpan = card.querySelector('.scores span'); // el score de AniList
-    const avgDiv = card.querySelector('.average');     // "⭐ 8.45"
+    if (!card) return;
+
+    const malTextNode = card.querySelector('.scores').childNodes[0]; // "MAL: xx.xx | "
+    const alElement = card.querySelector('.scores span');
+    const avgElement = card.querySelector('.average');
 
     const mal = parseFloat(anime.mal);
     const al = anime.al ? parseFloat(anime.al) : null;
     const avg = al ? (mal + al) / 2 : mal;
 
-    const format = (num) => currentScoreMode === 'percent' ? (num * 10).toFixed(2) + '%' : num.toFixed(2);
+    // Formateador
+    const format = (num) => 
+        currentScoreMode === 'percent' 
+            ? (num * 10).toFixed(2) + '%' 
+            : num.toFixed(2);
 
-    // Actualizamos los textos
-    malSpan.textContent = 'MAL: ' + format(mal) + ' | AniList: ';
-    if (alSpan) {
+    // Actualizamos textos
+    if (malTextNode) {
+        malTextNode.textContent = `MAL: ${format(mal)} | AniList: `;
+    }
+
+    if (alElement) {
         if (al) {
-            alSpan.textContent = format(al);
+            alElement.textContent = format(al);
+        } else if (alElement.classList.contains('al-score')) {
+            alElement.textContent = 'N/A (editar)';
         } else {
-            // caso "N/A (editar)"
-            if (alSpan.classList.contains('al-score')) {
-                alSpan.textContent = 'N/A (editar)';
-            } else {
-                alSpan.textContent = 'N/A';
-            }
+            alElement.textContent = 'N/A';
         }
     }
-    avgDiv.textContent = '⭐ ' + format(avg);
+
+    if (avgElement) {
+        avgElement.textContent = `⭐ ${format(avg)}`;
+    }
 };
-// FIN NUEVO
+// FIN NUEVO (versión corregida)
 // ────────────────────────────────────────────────
 function getSelectedTypes() {
     const types = [];
