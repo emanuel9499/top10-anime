@@ -824,6 +824,7 @@ async function loadTop10() {
                                 saveMalCache(id, malData);
                                 break;
                             }
+                            await delay(500);
                         } catch (e) {
                             console.error("Error fetching MAL for", id, e);
                             break;
