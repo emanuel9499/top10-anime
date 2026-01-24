@@ -798,6 +798,20 @@ async function loadTop10() {
         const aniList = await fetchSeasonFromAniList(year, season);
         updateProgress(30);
 
+        // ── INICIO PATCH: fetch de MAL para todos ──
+for (let ani of aniList) {
+    if (ani.mal_id) {
+        const malData = await fetchMalFull(ani.mal_id); // fetch con cache
+        if (malData) {
+            ani.mal = malData.score ? parseFloat(malData.score.toFixed(2)) : null;
+            ani.title = ani.title || malData.title_english || malData.title;
+            ani.image = ani.image || malData.images?.jpg?.large_image_url || ani.image;
+        }
+    }
+}
+// ── FIN PATCH ──
+
+
     // Obtener datos completos de MAL para los que tengan idMal
     const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
     // Obtener datos completos de MAL para los que tengan idMal (con cache)
