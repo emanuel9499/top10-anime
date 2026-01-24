@@ -497,7 +497,7 @@ query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: I
             allMedia.push(...pageData.media);
             hasNext = pageData.pageInfo.hasNextPage;
             page++;
-            await delay(700); // Rate limit AniList ~90/min, mejor ser conservador
+            await delay(350); // Rate limit AniList ~90/min, mejor ser conservador
         } catch (e) {
             console.error("Error fetching AniList season", e);
             break;
