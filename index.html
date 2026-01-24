@@ -292,69 +292,75 @@ const progressText = document.getElementById('progressText');
 window.onload = () => {
     const y = document.getElementById('year');
     const currentYear = new Date().getFullYear();
-    for (let i = currentYear; i >= 1990; i--) {
+    
+    // Generamos opciones desde el año actual +2 hasta 1990
+    for (let i = currentYear + 2; i >= 1990; i--) {
         const o = document.createElement('option');
         o.value = i;
         o.textContent = i;
         y.appendChild(o);
     }
 
-    // Restaurar desde localStorage
-    const savedYear    = localStorage.getItem('selectedYear');
-    const savedSeason  = localStorage.getItem('selectedSeason');
-    const savedTypes   = JSON.parse(localStorage.getItem('selectedTypes') || '[]');
-
+    // Restaurar año guardado
+    const savedYear = localStorage.getItem('selectedYear');
     if (savedYear && y.querySelector(`option[value="${savedYear}"]`)) {
         y.value = savedYear;
     } else {
-        y.value = currentYear + (new Date().getMonth() >= 9 ? 1 : 0);
+        // Fallback: año actual (o próximo si ya estamos en Q4, pero por simplicidad usamos current)
+        y.value = currentYear;
     }
 
+    // Restaurar temporada
+    const savedSeason = localStorage.getItem('selectedSeason');
     if (savedSeason) {
-        document.getElementById('season').value = savedSeason;
+        const seasonSelect = document.getElementById('season');
+        if (seasonSelect.querySelector(`option[value="${savedSeason}"]`)) {
+            seasonSelect.value = savedSeason;
+        }
     }
 
-    document.getElementById('type-ona').checked    = savedTypes.includes("ONA");
-    document.getElementById('type-movie').checked  = savedTypes.includes("Movie");
-    document.getElementById('type-ova').checked    = savedTypes.includes("OVA");
+    // Restaurar tipos (ONA, Movie, etc.)
+    const savedTypes = JSON.parse(localStorage.getItem('selectedTypes') || '[]');
+    document.getElementById('type-ona').checked = savedTypes.includes("ONA");
+    document.getElementById('type-movie').checked = savedTypes.includes("Movie");
+    document.getElementById('type-ova').checked = savedTypes.includes("OVA");
     document.getElementById('type-special').checked = savedTypes.includes("Special");
 
+    // Iniciar countdown
     startCountdown();
 
-    // Guardar año al cambiar
-    document.getElementById('year').addEventListener('change', () => {
-        localStorage.setItem('selectedYear', document.getElementById('year').value);
+    // Guardar cambios en localStorage
+    y.addEventListener('change', () => {
+        localStorage.setItem('selectedYear', y.value);
         startCountdown();
     });
 
-    // Guardar temporada al cambiar
     document.getElementById('season').addEventListener('change', () => {
         localStorage.setItem('selectedSeason', document.getElementById('season').value);
         startCountdown();
     });
 
-    // Guardar checkboxes al cambiar
+    // Guardar cambios en checkboxes y invalidar caché si cambia
     const checkboxes = document.querySelectorAll('.type-filters input[type="checkbox"]:not([disabled])');
     checkboxes.forEach(chk => {
         chk.addEventListener('change', () => {
             const selectedTypes = [];
-            if (document.getElementById('type-ona').checked)    selectedTypes.push("ONA");
-            if (document.getElementById('type-movie').checked)  selectedTypes.push("Movie");
-            if (document.getElementById('type-ova').checked)    selectedTypes.push("OVA");
+            if (document.getElementById('type-ona').checked) selectedTypes.push("ONA");
+            if (document.getElementById('type-movie').checked) selectedTypes.push("Movie");
+            if (document.getElementById('type-ova').checked) selectedTypes.push("OVA");
             if (document.getElementById('type-special').checked) selectedTypes.push("Special");
             localStorage.setItem('selectedTypes', JSON.stringify(selectedTypes));
 
-            // Invalidar caché y recargar
-            const year = document.getElementById('year').value;
+            // Invalidar caché de la temporada actual para que se recargue con los nuevos filtros
+            const year = y.value;
             const season = document.getElementById('season').value;
             if (year && season) {
                 localStorage.removeItem(seasonKey(year, season));
             }
-            
         });
     });
 
-    // Cargar automáticamente al entrar
+    // Cargar los top 10 automáticamente al abrir la página
     loadTop10();
 };
 
@@ -787,11 +793,12 @@ for (const id of malIdsToFetch) {
                    ani.coverImage?.large ||
                    'https://via.placeholder.com/300x450?text=Sin+Imagen';
 
-    // Prioridad de título: MAL english > AniList english > romaji > fallback
-    let title = mal?.title?.english ||
-                ani.title?.english ||
-                ani.title?.romaji ||
-                "Sin título";
+    // Prioridad de título: MAL english > AniList english > AniList romaji > AniList native > fallback
+let title = mal?.title?.english ||
+            ani.title?.english ||
+            ani.title?.romaji ||
+            ani.title?.native ||
+            "Sin título";
 
     return {
         mal_id: ani.mal_id,
@@ -815,29 +822,33 @@ for (const id of malIdsToFetch) {
     const malScoreRaw = ani.mal ?? null;
     let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
 
-    // Fallback: si no hay manual ni MAL, usa AniList directamente
+    // Si no hay manual ni MAL, usar AniList directamente (ya lo tenías, pero reforzamos)
     if (alScoreRaw == null && ani.al != null) {
         alScoreRaw = ani.al;
     }
 
-    // Convertir a número de forma segura
-    const malNum = malScoreRaw != null ? parseFloat(malScoreRaw) : null;
-    const alNum  = alScoreRaw  != null ? parseFloat(alScoreRaw)  : null;
+    // Convertir a número seguro (evitar NaN)
+    const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
+    const alNum = alScoreRaw != null && !isNaN(alScoreRaw) ? parseFloat(alScoreRaw) : null;
 
-    // Promedio: si ambos válidos → promedio, si solo uno → ese, si ninguno → 0
+    // Promedio seguro
     let avgNum = 0;
     let sourcesCount = 0;
-
     if (malNum != null) { avgNum += malNum; sourcesCount++; }
-    if (alNum  != null) { avgNum += alNum;  sourcesCount++; }
+    if (alNum != null) { avgNum += alNum; sourcesCount++; }
     if (sourcesCount > 0) avgNum /= sourcesCount;
+
+    // Imagen ultra-segura: AniList > MAL > placeholder
+    let imageUrl = ani.image ||  // ya viene de AniList
+                   mal?.images?.jpg?.large_image_url ||
+                   'https://via.placeholder.com/300x450?text=Sin+Imagen';
 
     return {
         title: ani.title || "Sin título",
-        image: ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen',
-        mal:  malNum  != null ? malNum.toFixed(2)  : 'N/A',
-        al:   alNum   != null ? alNum.toFixed(2)   : 'N/A',
-        avg:  avgNum.toFixed(2),
+        image: imageUrl,
+        mal: malNum != null ? malNum.toFixed(2) : 'N/A',
+        al: alNum != null ? alNum.toFixed(2) : 'N/A',
+        avg: avgNum.toFixed(2),
         sources: sourcesCount,
         mal_id: ani.mal_id,
         al_id: ani.al_id
