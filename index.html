@@ -787,61 +787,71 @@ async function loadTop10() {
         updateProgress(30, 'Datos de AniList obtenidos');
 
         // ──────────────────────
-        // Etapa 2: Enriquecer con datos de MAL (la parte más lenta) → 30% → 85%
-        // ──────────────────────
-        updateProgress(35, 'Obteniendo datos de MyAnimeList...');
+// Etapa 2: Enriquecer con datos de MAL → 30% → 85%
+// ──────────────────────
+updateProgress(35, 'Obteniendo datos de MyAnimeList...');
 
-        const malIdsToFetch = aniList
-            .filter(a => a.mal_id)
-            .map(a => a.mal_id);
+const malIdsToFetch = aniList
+    .filter(a => a.mal_id)
+    .map(a => a.mal_id);
 
-        const totalMal = malIdsToFetch.length;
-        let processedMal = 0;
+const totalMal = malIdsToFetch.length;
+let processedMal = 0;
 
-        const malDataById = {};
+const malDataById = {};
 
-        // Si no hay nada para fetchear, saltamos directo
-        if (totalMal === 0) {
-            updateProgress(85, 'No hay datos de MAL para enriquecer');
-        } else {
-            for (const id of malIdsToFetch) {
-                let malData = getMalCache(id);
+// Si no hay nada para fetchear, saltamos directo
+if (totalMal === 0) {
+    updateProgress(85, 'No hay datos de MAL para enriquecer');
+} else {
+    for (const id of malIdsToFetch) {
+        let malData = getMalCache(id);
 
-                if (!malData) {
-                    let attempts = 0;
-                    while (attempts < 3) {
-                        try {
-                            const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
-                            if (res.status === 429) {
-                                console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
-                                await delay(5000 * (attempts + 1));
-                                attempts++;
-                                continue;
-                            }
-                            if (res.ok) {
-                                const data = await res.json();
-                                malData = data.data;
-                                saveMalCache(id, malData);
-                                break;
-                            }
-                            await delay(500);
-                        } catch (e) {
-                            console.error("Error fetching MAL for", id, e);
-                            break;
-                        }
+        if (!malData) {
+            let attempts = 0;
+            while (attempts < 3) {
+                try {
+                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                    
+                    if (res.status === 429) {
+                        console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
+                        await delay(5000 * (attempts + 1));
                         attempts++;
-                        await delay(1500);
+                        continue;
                     }
+                    
+                    if (res.ok) {
+                        const data = await res.json();
+                        malData = data.data;
+                        saveMalCache(id, malData);
+                        
+                        // ←─ CLAVE: 1 request por segundo
+                        await delay(1000);  // Espera 1 segundo después de éxito
+                        break;
+                    }
+                    
+                    // Si no es 200 ni 429 → error genérico
+                    console.warn(`Error ${res.status} en MAL ID ${id}`);
+                    await delay(1000);
+                    break;
+                } catch (e) {
+                    console.error("Error fetching MAL for", id, e);
+                    await delay(1000);
+                    break;
                 }
-
-                if (malData) malDataById[id] = malData;
-
-                // ── Progreso real basado en cuántos animes ya procesamos ──
-                processedMal++;
-                const malProgress = 30 + (55 * (processedMal / totalMal)); // 30% → 85%
-                updateProgress(Math.min(85, malProgress), `Procesando MAL (${processedMal}/${totalMal})`);
+                attempts++;
+                await delay(1500); // delay entre reintentos
             }
         }
+
+        if (malData) malDataById[id] = malData;
+
+        // Actualizar progreso
+        processedMal++;
+        const malProgress = 30 + (55 * (processedMal / totalMal)); // 30% → 85%
+        updateProgress(Math.min(85, malProgress), `Procesando MAL (${processedMal}/${totalMal})`);
+    }
+}
 
         updateProgress(85, 'Datos de MAL completados');
 
