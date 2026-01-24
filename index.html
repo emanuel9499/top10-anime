@@ -184,9 +184,9 @@ button:hover { transform:scale(1.05); }
     background-size: 200% 100%;
     animation: pulse 1.5s infinite;
 }
-frames pulse {
-    0% { background-position:0% }
-    100% { background-position:200% }
+@keyframes pulse {
+    0% { background-position: 0% }
+    100% { background-position: 200% }
 }
 @media(max-width:1200px){ .grid{grid-template-columns:repeat(3,1fr);} }
 @media(max-width:800px){ 
@@ -745,17 +745,14 @@ async function loadTop10() {
     const year = parseInt(document.getElementById('year').value);
     const season = document.getElementById('season').value;
     const key = seasonKey(year, season);
-
-    let cachedData = getSeasonCache(key);
-
-    if (cachedData) {
-        fullRanking = cachedData;           // ← Ahora guardamos toda la lista
-        currentPage = 1;                    // ← Reseteamos a página 1 al cargar caché
-        renderPage();                       // ← Nueva función que renderiza la página actual
-        loading.textContent = '';
-        progressContainer.style.display = 'none';
-        return;
-    }
+    let fullRanking = getSeasonCache(key);
+if (fullRanking) {
+    currentPage = 1;
+    renderPage();                    // ← Llama a la nueva función
+    loading.textContent = '';
+    progressContainer.style.display = 'none';
+    return;
+}
 
     loading.textContent = 'Cargando temporada...';
     progressContainer.style.display = 'block';
@@ -769,148 +766,190 @@ async function loadTop10() {
     }, 300);
 
     // ──────────────────────────────
-    // Obtenemos TODA la temporada desde AniList (hasta 40-60 items aprox)
+    // Aquí va el bloque que pegaste (reemplaza lo viejo de malList)
     const aniList = await fetchSeasonFromAniList(year, season);
     updateProgress(30);
 
-    // Obtener datos completos de MAL solo para los primeros 15 (para no abusar de la API)
-    const malIdsToFetch = aniList
-        .filter(a => a.mal_id)
-        .map(a => a.mal_id)
-        .slice(0, 15);
+    // Obtener datos completos de MAL para los que tengan idMal
+    const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
+    // Obtener datos completos de MAL para los que tengan idMal (con cache)
+updateProgress(30);
 
-    const malDataById = {};
+// Obtener datos de MAL con cache, retry y límite para evitar 429
+const malDataById = {};
 
-    for (const id of malIdsToFetch) {
-        let malData = getMalCache(id);
+// Cache en localStorage (persiste entre recargas)
+function getMalCache(id) {
+    const raw = localStorage.getItem(`MAL_FULL_${id}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+        localStorage.removeItem(`MAL_FULL_${id}`);
+        return null;
+    }
+    return parsed.data;
+}
 
-        if (!malData) {
-            let attempts = 0;
-            while (attempts < 3) {
-                try {
-                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
-                    if (res.status === 429) {
-                        console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
-                        await delay(5000 * (attempts + 1));
-                        attempts++;
-                        continue;
-                    }
-                    if (res.ok) {
-                        const data = await res.json();
-                        malData = data.data;
-                        saveMalCache(id, malData);
-                        break;
-                    }
-                } catch (e) {
-                    console.error("Error fetching MAL for", id, e);
+function saveMalCache(id, data) {
+    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
+        timestamp: Date.now(),
+        data
+    }));
+}
+
+// Solo enriquecemos los primeros 15 (los de más score) para no abusar
+const malIdsToFetch = aniList
+    .filter(a => a.mal_id)
+    .map(a => a.mal_id)
+    .slice(0, 15);  // ← clave: límite bajo
+
+for (const id of malIdsToFetch) {
+    let malData = getMalCache(id);
+
+    if (!malData) {
+        let attempts = 0;
+        while (attempts < 3) {
+            try {
+                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                if (res.status === 429) {
+                    console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
+                    await delay(5000 * (attempts + 1));  // backoff exponencial
+                    attempts++;
+                    continue;
+                }
+                if (res.ok) {
+                    const data = await res.json();
+                    malData = data.data;
+                    saveMalCache(id, malData);
                     break;
                 }
-                attempts++;
-                await delay(1500);
+            } catch (e) {
+                console.error("Error fetching MAL for", id, e);
+                break;
             }
+            attempts++;
+            await delay(1500);  // delay normal 1.5s
         }
-
-        if (malData) malDataById[id] = malData;
     }
+
+    if (malData) malDataById[id] = malData;
+}
 
     updateProgress(60);
 
     // Combinar: AniList como base, enriquecer con MAL donde exista
-    const enrichedList = aniList.map(ani => {
-        const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+   const enrichedList = aniList.map(ani => {
+    const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-        // TÍTULO FINAL (prioridad: MAL EN > MAL principal > AL EN > AL Romaji > AL Native)
-        let title = null;
-        if (mal?.title_english && mal.title_english.trim() !== '') {
-            title = mal.title_english.trim();
-        } else if (mal?.title && mal.title.trim() !== '') {
-            title = mal.title.trim();
-        } else if (ani.titles?.english) {
-            title = ani.titles.english;
-        } else if (ani.titles?.romaji) {
-            title = ani.titles.romaji;
-        } else if (ani.titles?.native) {
-            title = ani.titles.native;
-        } else {
-            title = "Sin título";
-        }
+    // TÍTULO FINAL (MAL EN > AniList EN > AniList Romaji > Native)
+let title = null;
 
-        // IMAGEN: AniList rey, MAL backup
-        let imageUrl = ani.image ||
-                       (mal?.images?.jpg?.large_image_url ||
-                        'https://via.placeholder.com/300x450?text=Sin+Imagen');
+// 1️⃣ MAL inglés
+if (mal?.title_english && mal.title_english.trim() !== '') {
+    title = mal.title_english.trim();
+}
+// 2️⃣ MAL fallback (romaji/japonés)
+else if (mal?.title && mal.title.trim() !== '') {
+    title = mal.title.trim();
+}
+// 3️⃣ AniList inglés
+else if (ani.titles?.english) {
+    title = ani.titles.english;
+}
+// 4️⃣ AniList romaji
+else if (ani.titles?.romaji) {
+    title = ani.titles.romaji;
+}
+// 5️⃣ AniList native
+else if (ani.titles?.native) {
+    title = ani.titles.native;
+}
+// 6️⃣ último recurso
+else {
+    title = "Sin título";
+}
 
-        return {
-            mal_id: ani.mal_id,
-            title: title.trim() || "Sin título",
-            image: imageUrl,
-            mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-            al: ani.score ? ani.score.toFixed(2) : null,
-            al_id: ani.al_id,
-            type: ani.format || 'Unknown'
-        };
-    });
+    // IMAGEN: AniList rey, MAL backup
+    let imageUrl = ani.image ||
+                   (mal?.images?.jpg?.large_image_url ||
+                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
+
+    return {
+        mal_id: ani.mal_id,
+        title: title.trim() || "Sin título",
+        image: imageUrl,
+        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
+        al: ani.score ? ani.score.toFixed(2) : null,
+        al_id: ani.al_id,
+        type: ani.format || 'Unknown'
+    };
+});
+    // ──────────────────────────────
 
     clearInterval(fakeInterval);
     updateProgress(90);
 
-    // Procesar la lista completa con promedios y manual scores
+    // Aquí sigue tu código original de alData (si lo mantenés)
+    // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
+
     const processed = enrichedList.map(ani => {
-        const malScoreRaw = ani.mal ?? null;
-        let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
+    const malScoreRaw = ani.mal ?? null;
+    let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
 
-        if (alScoreRaw == null && ani.al != null) {
-            alScoreRaw = ani.al;
-        }
+    // Si no hay manual y no hay MAL → usar AniList (ya debería venir)
+    if (alScoreRaw == null && ani.al != null) {
+        alScoreRaw = ani.al;
+    }
 
-        const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
-        const alNum = alScoreRaw != null && !isNaN(alScoreRaw) ? parseFloat(alScoreRaw) : null;
+    // Números seguros (evitar NaN)
+    const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
+    const alNum = alScoreRaw != null && !isNaN(alScoreRaw) ? parseFloat(alScoreRaw) : null;
 
-        let avgNum = 0;
-        let sourcesCount = 0;
-        if (malNum != null) { avgNum += malNum; sourcesCount++; }
-        if (alNum != null) { avgNum += alNum; sourcesCount++; }
-        if (sourcesCount > 0) avgNum /= sourcesCount;
+    // Promedio
+    let avgNum = 0;
+    let sourcesCount = 0;
+    if (malNum != null) { avgNum += malNum; sourcesCount++; }
+    if (alNum != null) { avgNum += alNum; sourcesCount++; }
+    if (sourcesCount > 0) avgNum /= sourcesCount;
 
-        let finalImage = ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen';
+    // Imagen FINAL: AniList es rey
+    let finalImage = ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen';
 
-        return {
-            title: ani.title || "Sin título",
-            image: finalImage,
-            mal: malNum != null ? malNum.toFixed(2) : 'N/A',
-            al: alNum != null ? alNum.toFixed(2) : 'N/A',
-            avg: avgNum.toFixed(2),
-            sources: sourcesCount,
-            mal_id: ani.mal_id,
-            al_id: ani.al_id
-        };
-    });
+    return {
+        title: ani.title || "Sin título",  // ya viene de AniList
+        image: finalImage,
+        mal: malNum != null ? malNum.toFixed(2) : 'N/A',
+        al: alNum != null ? alNum.toFixed(2) : 'N/A',
+        avg: avgNum.toFixed(2),
+        sources: sourcesCount,
+        mal_id: ani.mal_id,
+        al_id: ani.al_id
+    };
+});
+    // Ordenar TODA la lista (ranking completo)
+fullRanking = processed.sort((a, b) => {
+    if (b.avg !== a.avg) return b.avg - a.avg;
+    const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
+    const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
+    if (maxB !== maxA) return maxB - maxA;
+    return a.title.localeCompare(b.title);
+});
 
-    // Ordenar TODA la lista (esto es el ranking completo)
-    fullRanking = processed.sort((a, b) => {
-        if (b.avg !== a.avg) return b.avg - a.avg;
-        const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
-        const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
-        if (maxB !== maxA) return maxB - maxA;
-        return a.title.localeCompare(b.title);
-    });
+// Guardamos la lista completa
+saveSeasonCache(key, fullRanking);
 
-    // Guardamos TODA la lista en caché
-    saveSeasonCache(key, fullRanking);
+// Renderizamos la primera página
+currentPage = 1;
+renderPage();
+   
 
-    // Renderizamos la primera página
-    currentPage = 1;
-    renderPage();
-
+    startCountdown();
+    loading.textContent = '';
     updateProgress(100);
     setTimeout(() => {
         progressContainer.style.display = 'none';
     }, 300);
-
-    loading.textContent = '';
-    startCountdown();
 }
-
 // Renderiza SOLO la página actual
 function renderPage() {
     grid.innerHTML = '';
@@ -938,7 +977,6 @@ function renderPage() {
     nextBtn.disabled = currentPage === totalPages || totalPages === 0;
 }
 
-// ────────────────────────────────────────────────
 // Cambia de página
 function changePage(delta) {
     currentPage += delta;
