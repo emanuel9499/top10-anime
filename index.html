@@ -811,26 +811,33 @@ for (const id of malIdsToFetch) {
     // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
 
     const processed = enrichedList.map(ani => {
-    const malScore = ani.mal ?? null;
-    let alScore = ani.al ?? getManualScore(ani.mal_id);
+    const malScoreRaw = ani.mal ?? null;
+    let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
 
-    // Si no hay manual ni MAL, fallback a AniList (ya lo tenés, pero reforzamos)
-    if (!alScore && ani.al) {
-        alScore = ani.al;
+    // Fallback: si no hay manual ni MAL, usa AniList directamente
+    if (alScoreRaw == null && ani.al != null) {
+        alScoreRaw = ani.al;
     }
 
-    // Evitar NaN en promedio
-    const malNum = malScore ? parseFloat(malScore) : 0;
-    const alNum = alScore ? parseFloat(alScore) : 0;
-    const avg = (malNum + alNum) / (malNum && alNum ? 2 : 1); // si solo uno, usa ese
+    // Convertir a número de forma segura
+    const malNum = malScoreRaw != null ? parseFloat(malScoreRaw) : null;
+    const alNum  = alScoreRaw  != null ? parseFloat(alScoreRaw)  : null;
+
+    // Promedio: si ambos válidos → promedio, si solo uno → ese, si ninguno → 0
+    let avgNum = 0;
+    let sourcesCount = 0;
+
+    if (malNum != null) { avgNum += malNum; sourcesCount++; }
+    if (alNum  != null) { avgNum += alNum;  sourcesCount++; }
+    if (sourcesCount > 0) avgNum /= sourcesCount;
 
     return {
         title: ani.title || "Sin título",
         image: ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen',
-        mal: malScore ? malScore.toFixed(2) : 'N/A',
-        al: alScore ? alScore.toFixed(2) : 'N/A',
-        avg: avg.toFixed(2),
-        sources: (malScore ? 1 : 0) + (alScore ? 1 : 0),
+        mal:  malNum  != null ? malNum.toFixed(2)  : 'N/A',
+        al:   alNum   != null ? alNum.toFixed(2)   : 'N/A',
+        avg:  avgNum.toFixed(2),
+        sources: sourcesCount,
         mal_id: ani.mal_id,
         al_id: ani.al_id
     };
