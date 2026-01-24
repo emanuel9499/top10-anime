@@ -619,9 +619,9 @@ function saveManualScore(malId, score) {
     localStorage.setItem(key, score);
 }
 
-function updateProgress(percent) {
+function updateProgress(percent, message = '') {
     progressBar.style.width = percent + '%';
-    progressText.textContent = Math.round(percent) + '%';
+    progressText.textContent = `${Math.round(percent)}%${message ? ` — ${message}` : ''}`;
 }
 
 function renderSkeletons() {
