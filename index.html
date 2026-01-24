@@ -671,6 +671,59 @@ function startCountdown() {
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = setInterval(updateCountdown, 1000);
 }
+// ────────────────────────────────────────────────
+// NUEVO: Sistema de puntajes normal vs porcentual
+let currentScoreMode = localStorage.getItem('scoreMode') || 'normal';
+document.getElementById('scoreMode').value = currentScoreMode;
+
+document.getElementById('scoreMode').addEventListener('change', function() {
+    currentScoreMode = this.value;
+    localStorage.setItem('scoreMode', currentScoreMode);
+    // Si ya hay animes cargados, actualizar solo las cards (sin recargar API)
+    if (grid.children.length > 0 && !grid.querySelector('.skeleton')) {
+        const cached = getSeasonCache(seasonKey(parseInt(document.getElementById('year').value), document.getElementById('season').value));
+        if (cached) {
+            grid.innerHTML = '';
+            cached.forEach((anime, i) => renderCard(anime, i));
+        }
+    }
+});
+
+// Modificamos renderCard para que respete el modo elegido
+const originalRenderCard = renderCard;
+window.renderCard = function(anime, index) {
+    originalRenderCard(anime, index); // crea la card como siempre
+    
+    // Ahora modificamos los textos de puntaje en la card que se acaba de crear
+    const card = grid.lastElementChild;
+    const malSpan = card.querySelector('.scores').children[0]; // "MAL: 8.45 |"
+    const alSpan = card.querySelector('.scores span'); // el score de AniList
+    const avgDiv = card.querySelector('.average');     // "⭐ 8.45"
+
+    const mal = parseFloat(anime.mal);
+    const al = anime.al ? parseFloat(anime.al) : null;
+    const avg = al ? (mal + al) / 2 : mal;
+
+    const format = (num) => currentScoreMode === 'percent' ? (num * 10).toFixed(2) + '%' : num.toFixed(2);
+
+    // Actualizamos los textos
+    malSpan.textContent = 'MAL: ' + format(mal) + ' | AniList: ';
+    if (alSpan) {
+        if (al) {
+            alSpan.textContent = format(al);
+        } else {
+            // caso "N/A (editar)"
+            if (alSpan.classList.contains('al-score')) {
+                alSpan.textContent = 'N/A (editar)';
+            } else {
+                alSpan.textContent = 'N/A';
+            }
+        }
+    }
+    avgDiv.textContent = '⭐ ' + format(avg);
+};
+// FIN NUEVO
+// ────────────────────────────────────────────────
 function getSelectedTypes() {
     const types = [];
     if (document.getElementById('type-tv').checked)     types.push("TV");
@@ -680,6 +733,7 @@ function getSelectedTypes() {
     if (document.getElementById('type-special').checked) types.push("Special");
     return types;
 }
+
 </script>
 </body>
 </html>
