@@ -312,7 +312,6 @@ const progressText = document.getElementById('progressText');
 let seasonRanking = []; // Lista completa de la temporada
 let currentPage = 1;
 const itemsPerPage = 10;
-const malDataCache = {};
 
 
 window.onload = () => {
@@ -421,26 +420,7 @@ function cleanupCache() {
         .slice(0, seasons.length - MAX_SEASONS_CACHED)
         .forEach(s => localStorage.removeItem(s.key));
 }
-// Caché local de datos completos de MAL por ID
-function getMalCache(id) {
-    const raw = localStorage.getItem(`MAL_FULL_${id}`);
-    if (!raw) return null;
-    
-    const parsed = JSON.parse(raw);
-    if (Date.now() - parsed.timestamp > CACHE_TTL) {
-        localStorage.removeItem(`MAL_FULL_${id}`);
-        return null;
-    }
-    
-    return parsed.data;
-}
 
-function saveMalCache(id, data) {
-    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
-        timestamp: Date.now(),
-        data
-    }));
-}
 // Consulta rápida a AniList por un solo MAL ID (ponela ANTES de fetchSeasonMAL)
 async function getAniListSeason(malId) {
     const query = `
@@ -484,44 +464,44 @@ async function getAniListSeason(malId) {
 async function fetchSeasonFromAniList(year, season) {
     const allowedFormats = getSelectedTypes().map(t => {
         switch (t) {
-            case "TV":      return "TV";
-            case "ONA":     return "ONA";
-            case "Movie":   return "MOVIE";
-            case "OVA":     return "OVA";
+            case "TV": return "TV";
+            case "ONA": return "ONA";
+            case "Movie": return "MOVIE";
+            case "OVA": return "OVA";
             case "Special": return "SPECIAL";
-            default:        return null;
+            default: return null;
         }
     }).filter(Boolean);
 
     if (allowedFormats.length === 0) return [];
 
-    const aniSeason = season.toUpperCase();
+    const aniSeason = season.toUpperCase(); // WINTER, SPRING, SUMMER, FALL
 
     const query = `
-    query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: Int) {
-      Page(page: $page, perPage: 50) {
-        pageInfo { hasNextPage }
-        media(seasonYear: $seasonYear, season: $season, format_in: $formats, type: ANIME, sort: SCORE_DESC) {
-          id
-          idMal
-          title { 
-            english 
-            romaji 
-            native
-          }
-          averageScore
-          format
-          episodes
-          coverImage { large }
-        }
+query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    media(seasonYear: $seasonYear, season: $season, format_in: $formats, type: ANIME, sort: SCORE_DESC) {
+      id
+      idMal
+      title { 
+        english 
+        romaji 
+        native   # ← AGREGAR ESTO
       }
-    }`;
+      averageScore
+      format
+      episodes
+      coverImage { large }
+    }
+  }
+}`;
 
     let allMedia = [];
     let page = 1;
     let hasNext = true;
 
-    while (hasNext && allMedia.length < 100) {
+    while (hasNext && allMedia.length < 60) {
         try {
             const res = await fetch('https://graphql.anilist.co', {
                 method: 'POST',
@@ -537,29 +517,36 @@ async function fetchSeasonFromAniList(year, season) {
             const { data } = await res.json();
             const pageData = data?.Page;
 
-            if (!pageData?.media?.length) break;
+            if (!pageData?.media) break;
 
             allMedia.push(...pageData.media);
             hasNext = pageData.pageInfo.hasNextPage;
             page++;
-            await delay(400);
+            await delay(350); // Rate limit AniList ~90/min, mejor ser conservador
         } catch (e) {
-            console.error("Error AniList season", e);
+            console.error("Error fetching AniList season", e);
             break;
         }
     }
 
+    // Ordenar por score descendente (aunque ya pedimos sort)
     allMedia.sort((a, b) => (b.averageScore || 0) - (a.averageScore || 0));
 
+    // Mapear a formato compatible con tu código actual (para que renderCard y scores funcionen)
     return allMedia.map(m => ({
-        al_id:        m.id,
-        mal_id:       m.idMal,
-        title:        m.title?.english || m.title?.romaji || m.title?.native || "Sin título",
-        image:        m.coverImage?.large || '',
-        al_score:     m.averageScore ? (m.averageScore / 10).toFixed(2) : null,
-        format:       m.format,
-        episodes:     m.episodes
-    }));
+    mal_id: m.idMal || null,
+    titles: {
+        english: m.title?.english ?? null,
+        romaji:  m.title?.romaji  ?? null,
+        native:  m.title?.native  ?? null
+    },
+    image: m.coverImage?.large || '',
+    score: m.averageScore ? (m.averageScore / 10) : null,
+    format: m.format,
+    episodes: m.episodes,
+    al_id: m.id
+}));
+
 }
 
 
@@ -649,46 +636,74 @@ function renderSkeletons() {
 function renderCard(anime, index) {
     const card = document.createElement('div');
     card.className = 'anime-card';
+    const rankClass =
+    index === 0 ? 'gold' :
+    index === 1 ? 'silver' :
+    index === 2 ? 'bronze' :
+    'red';
 
-    const rankClass = index === 0 ? 'gold' :
-                      index === 1 ? 'silver' :
-                      index === 2 ? 'bronze' : 'red';
+    // Score AniList: automático, manual o N/A
+    let alScore = anime.al;
+    if (!alScore) {
+        alScore = getManualScore(anime.mal_id);
+    }
+    const hasAlId = anime.al_id !== undefined;
+    const finalAlScore = alScore || 'N/A';
+   
 
-    const malDisplay = anime.mal === 'N/A' ? '—' : anime.mal;
-    const avgDisplay = anime.avg || '—';
+
+    // Promedio actualizado con score manual si existe
+let malScore = anime.mal != null && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
+let alFinal  = alScore != null ? parseFloat(alScore) : null;
+
+let avgNum = 0;
+let count = 0;
+if (malScore != null) { avgNum += malScore; count++; }
+if (alFinal  != null) { avgNum += alFinal;  count++; }
+
+const avg = count === 2 ? (avgNum / 2).toFixed(2) :
+            count === 1 ? avgNum.toFixed(2) :
+            'N/A';
 
     card.innerHTML = `
-        <div class="rank ${rankClass}">#${index + 1}</div>
-        <img src="${anime.image}" alt="${anime.title}">
-        <div class="title">${anime.title}</div>
-        <div class="scores">
-            MAL: ${malDisplay} | AniList: ${anime.al || 'N/A'}
-        </div>
-        <div class="average">⭐ ${avgDisplay}</div>
-        <div class="links">
-            ${anime.mal_id ? `<a href="https://myanimelist.net/anime/${anime.mal_id}" target="_blank">MAL</a>` : ''}
-            ${anime.al_id  ? `<a href="https://anilist.co/anime/${anime.al_id}"  target="_blank">AniList</a>` : ''}
-        </div>
-    `;
+    <div class="rank ${rankClass}">#${index + 1}</div>
+    <img src="${anime.image}">
+    <div class="title">${anime.title}</div>
+    <div class="scores">
+        MAL: ${anime.mal} |
+        AniList: 
+        ${alScore 
+            ? `<span>${alScore}</span>`
+            : hasAlId 
+                ? `<span class="al-score" onclick="editAlScore(${anime.mal_id}, this)">${finalAlScore} (editar)</span>`
+                : `<span>${finalAlScore}</span>`
+        }
+        
+    </div>
+    <div class="bottom">
+    <div class="average">⭐ ${avg}</div>
+    <div class="links">
+        <a href="https://myanimelist.net/anime/${anime.mal_id}" target="_blank">MAL</a>
+        ${hasAlId ? `<a href="https://anilist.co/anime/${anime.al_id}" target="_blank">AniList</a>` : ''}
+    </div>
+</div>
+`;
 
     grid.appendChild(card);
 }
 
 function renderPage(page) {
     if (!seasonRanking.length) return;
-
     const start = (page - 1) * itemsPerPage;
-    const end   = start + itemsPerPage;
+    const end = start + itemsPerPage;
     const pageItems = seasonRanking.slice(start, end);
 
     grid.innerHTML = '';
     pageItems.forEach((anime, i) => renderCard(anime, start + i));
 
     updatePageButtons();
-
-    // Cargamos scores MAL si es necesario para esta página
-    lazyLoadMalScores(page);
 }
+
 // Función global para editar score
 function editAlScore(malId, element) {
     const current = element.textContent.trim();
@@ -730,7 +745,7 @@ function editAlScore(malId, element) {
 }
 
 async function loadTop10() {
-    const year   = parseInt(document.getElementById('year').value);
+    const year = parseInt(document.getElementById('year').value);
     const season = document.getElementById('season').value;
     if (!year || !season) return;
 
@@ -746,135 +761,195 @@ async function loadTop10() {
 
         let fakeProgress = 0;
         const fakeInterval = setInterval(() => {
-            fakeProgress += Math.random() * 5 + 2;
-            if (fakeProgress < 70) updateProgress(fakeProgress);
-        }, 250);
+            fakeProgress += Math.random() * 4 + 1;
+            if (fakeProgress < 85) updateProgress(fakeProgress);
+        }, 300);
 
-        const aniListData = await fetchSeasonFromAniList(year, season);
-        updateProgress(50);
+        const aniList = await fetchSeasonFromAniList(year, season);
+        updateProgress(30);
 
-        seasonRanking = aniListData
-            .filter(a => a.al_score !== null)
-            .map(anime => ({
-                mal_id:   anime.mal_id,
-                al_id:    anime.al_id,
-                title:    anime.title,
-                image:    anime.image,
-                mal:      'N/A',
-                al:       anime.al_score,
-                avg:      anime.al_score,
-                malLoaded: false
-            }))
-            .sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg));
+    // Obtener datos completos de MAL para los que tengan idMal
+    const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
+    // Obtener datos completos de MAL para los que tengan idMal (con cache)
+updateProgress(30);
+
+// Obtener datos de MAL con cache, retry y límite para evitar 429
+const malDataById = {};
+
+// Cache en localStorage (persiste entre recargas)
+function getMalCache(id) {
+    const raw = localStorage.getItem(`MAL_FULL_${id}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+        localStorage.removeItem(`MAL_FULL_${id}`);
+        return null;
+    }
+    return parsed.data;
+}
+
+function saveMalCache(id, data) {
+    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
+        timestamp: Date.now(),
+        data
+    }));
+}
+
+// Solo enriquecemos los primeros 15 (los de más score) para no abusar
+const malIdsToFetch = aniList
+    .filter(a => a.mal_id)
+    .map(a => a.mal_id)
+    
+
+for (const id of malIdsToFetch) {
+    let malData = getMalCache(id);
+
+    if (!malData) {
+        let attempts = 0;
+        while (attempts < 3) {
+            try {
+                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                if (res.status === 429) {
+                    console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
+                    await delay(5000 * (attempts + 1));  // backoff exponencial
+                    attempts++;
+                    continue;
+                }
+                if (res.ok) {
+                    const data = await res.json();
+                    malData = data.data;
+                    saveMalCache(id, malData);
+                    break;
+                }
+            } catch (e) {
+                console.error("Error fetching MAL for", id, e);
+                break;
+            }
+            attempts++;
+            await delay(1500);  // delay normal 1.5s
+        }
+    }
+
+    if (malData) malDataById[id] = malData;
+}
+
+    updateProgress(60);
+
+    // Combinar: AniList como base, enriquecer con MAL donde exista
+   const enrichedList = aniList.map(ani => {
+    const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+
+    // TÍTULO FINAL (MAL EN > AniList EN > AniList Romaji > Native)
+let title = null;
+
+// 1️⃣ MAL inglés
+if (mal?.title_english && mal.title_english.trim() !== '') {
+    title = mal.title_english.trim();
+}
+// 2️⃣ MAL fallback (romaji/japonés)
+else if (mal?.title && mal.title.trim() !== '') {
+    title = mal.title.trim();
+}
+// 3️⃣ AniList inglés
+else if (ani.titles?.english) {
+    title = ani.titles.english;
+}
+// 4️⃣ AniList romaji
+else if (ani.titles?.romaji) {
+    title = ani.titles.romaji;
+}
+// 5️⃣ AniList native
+else if (ani.titles?.native) {
+    title = ani.titles.native;
+}
+// 6️⃣ último recurso
+else {
+    title = "Sin título";
+}
+
+    // IMAGEN: AniList rey, MAL backup
+    let imageUrl = ani.image ||
+                   (mal?.images?.jpg?.large_image_url ||
+                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
+
+    return {
+        mal_id: ani.mal_id,
+        title: title.trim() || "Sin título",
+        image: imageUrl,
+        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
+        al: ani.score ? ani.score.toFixed(2) : null,
+        al_id: ani.al_id,
+        type: ani.format || 'Unknown'
+    };
+});
+    // ──────────────────────────────
+
+    clearInterval(fakeInterval);
+    updateProgress(90);
+
+    // Aquí sigue tu código original de alData (si lo mantenés)
+    // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
+
+    // ... después de enrichedList ...
+
+const processed = enrichedList
+    .map(ani => {
+        const malScoreRaw = ani.mal ?? null;
+        let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
+
+        const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
+        const alNum  = alScoreRaw  != null && !isNaN(alScoreRaw)  ? parseFloat(alScoreRaw)  : null;
+
+        // Si NO tiene puntaje NI en MAL ni en AniList (ni manual) → lo descartamos
+        if (malNum === null && alNum === null) {
+            return null; // ← esto lo va a filtrar después
+        }
+
+        let avgNum = 0;
+        let sourcesCount = 0;
+        if (malNum != null) { avgNum += malNum; sourcesCount++; }
+        if (alNum  != null) { avgNum += alNum;  sourcesCount++; }
+        if (sourcesCount > 0) avgNum /= sourcesCount;
+
+        return {
+            title: ani.title || "Sin título",
+            image: ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen',
+            mal: malNum != null ? malNum.toFixed(2) : 'N/A',
+            al: alNum != null ? alNum.toFixed(2) : 'N/A',
+            avg: avgNum.toFixed(2),
+            mal_id: ani.mal_id,
+            al_id: ani.al_id
+        };
+    })
+    .filter(anime => anime !== null); // ← ¡Acá eliminamos los que quedaron null!
+    // El resto sigue igual: sort, slice(0,10), render, cache, etc.
+    seasonRanking = processed.sort((a, b) => {
+            if (b.avg !== a.avg) return b.avg - a.avg;
+            const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
+            const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
+            if (maxB !== maxA) return maxB - maxA;
+            return a.title.localeCompare(b.title);
+        });
 
         saveSeasonCache(key, seasonRanking);
 
         clearInterval(fakeInterval);
-        updateProgress(85);
+        updateProgress(100);
+        setTimeout(() => progressContainer.style.display = 'none', 300);
     } else {
         seasonRanking = seasonData;
-        updateProgress(85);
+        updateProgress(100);
+        setTimeout(() => progressContainer.style.display = 'none', 300);
     }
 
-    currentPage = 1;
+    // Siempre renderizamos correctamente la página actual
+    currentPage = 1;  // Puedes quitar esta línea si querés mantener la página actual al recargar la misma temporada
     grid.innerHTML = '';
     renderPage(currentPage);
     updatePageButtons();
 
-    // Cargamos MAL solo para la página 1 al inicio
-    await lazyLoadMalScores(currentPage);
-
-    progressContainer.style.display = 'none';
     loading.textContent = '';
     startCountdown();
-}
-
-// Agregá esta función nueva (si no la tenés):
-async function lazyLoadMalScores(page) {
-    const start = (page - 1) * itemsPerPage;
-    const end   = start + itemsPerPage;
-    const pageAnimes = seasonRanking.slice(start, end);
-
-    const toFetch = pageAnimes
-        .filter(anime => anime.mal === 'N/A' && anime.mal_id)
-        .map(anime => anime.mal_id);
-
-    if (toFetch.length === 0) return;
-
-    loading.textContent = `Cargando scores MAL (${toFetch.length} animes)...`;
-
-    for (const malId of toFetch) {
-        if (malDataCache[malId]) continue;
-
-        const cached = getMalCache(malId);
-        if (cached?.score) {
-            malDataCache[malId] = cached;
-            continue;
-        }
-
-        let attempts = 0;
-        const maxAttempts = 3;
-
-        while (attempts < maxAttempts) {
-            try {
-                const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/full`);
-
-                if (res.status === 429) {
-                    // Backoff exponencial: 5s → 10s → 20s...
-                    const waitTime = 5000 * Math.pow(2, attempts);
-                    console.warn(`429 en MAL ID ${malId} → esperando ${waitTime/1000}s`);
-                    loading.textContent = `Rate limit MAL... esperando ${waitTime/1000}s`;
-                    await delay(waitTime);
-                    attempts++;
-                    continue;
-                }
-
-                if (!res.ok) {
-                    console.warn(`Error ${res.status} en MAL ID ${malId}`);
-                    break;
-                }
-
-                const data = await res.json();
-                const score = data.data?.score ? parseFloat(data.data.score.toFixed(2)) : null;
-
-                if (score) {
-                    malDataCache[malId] = { score };
-                    saveMalCache(malId, { score });
-                }
-
-                // Delay normal MUY conservador
-                await delay(3500);  // 3.5 segundos entre requests → ~17 req/min, seguro
-                break;  // éxito, salimos del while
-            } catch (e) {
-                console.warn("Error fetch Jikan", malId, e);
-                attempts++;
-                await delay(5000 * attempts);  // backoff si error de red
-            }
-        }
-    }
-
-    // Actualizar rankings y re-render
-    seasonRanking = seasonRanking.map(anime => {
-        if (!anime.mal_id || anime.mal !== 'N/A') return anime;
-
-        const malScore = malDataCache[anime.mal_id]?.score;
-        if (!malScore) return anime;
-
-        const alNum = parseFloat(anime.al) || 0;
-        const avg = ((malScore + alNum) / 2).toFixed(2);
-
-        return {
-            ...anime,
-            mal: malScore.toFixed(2),
-            avg,
-            malLoaded: true
-        };
-    });
-
-    saveSeasonCache(seasonKey(document.getElementById('year').value, document.getElementById('season').value), seasonRanking);
-
-    renderPage(currentPage);
-    loading.textContent = '';
 }
 // Retorna milisegundos restantes hasta que expire el caché de esta temporada
 function getTimeUntilNextUpdate(year, season) {
@@ -1035,7 +1110,6 @@ function prevPage() {
         currentPage--;
         renderPage(currentPage);
         updatePageButtons();
-        delay(1000);
     }
 }
 
@@ -1044,7 +1118,6 @@ function nextPage() {
         currentPage++;
         renderPage(currentPage);
         updatePageButtons();
-        delay(1000);
     }
 }
 
