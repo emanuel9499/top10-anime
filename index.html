@@ -758,32 +758,26 @@ function editAlScore(malId, element) {
 async function loadTop10() {
     const year = parseInt(document.getElementById('year').value);
     const season = document.getElementById('season').value;
+    if (!year || !season) return;
+
     const key = seasonKey(year, season);
-    let top10 = getSeasonCache(key);
+    let seasonData = getSeasonCache(key);
 
-    if (top10) {
-        grid.innerHTML = '';
-        top10.forEach((anime, i) => renderCard(anime, i));
-        loading.textContent = '';
-        progressContainer.style.display = 'none';
-        return;
-    }
-
-    loading.textContent = 'Cargando temporada...';
+    loading.textContent = seasonData ? 'Cargado desde caché...' : 'Cargando temporada...';
     progressContainer.style.display = 'block';
     updateProgress(0);
-    renderSkeletons();
 
-    let fakeProgress = 0;
-    const fakeInterval = setInterval(() => {
-        fakeProgress += Math.random() * 4 + 1;
-        if (fakeProgress < 85) updateProgress(fakeProgress);
-    }, 300);
+    if (!seasonData) {
+        renderSkeletons();
 
-    // ──────────────────────────────
-    // Aquí va el bloque que pegaste (reemplaza lo viejo de malList)
-    const aniList = await fetchSeasonFromAniList(year, season);
-    updateProgress(30);
+        let fakeProgress = 0;
+        const fakeInterval = setInterval(() => {
+            fakeProgress += Math.random() * 4 + 1;
+            if (fakeProgress < 85) updateProgress(fakeProgress);
+        }, 300);
+
+        const aniList = await fetchSeasonFromAniList(year, season);
+        updateProgress(30);
 
     // Obtener datos completos de MAL para los que tengan idMal
     const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
@@ -941,26 +935,32 @@ const processed = enrichedList
     .filter(anime => anime !== null); // ← ¡Acá eliminamos los que quedaron null!
     // El resto sigue igual: sort, slice(0,10), render, cache, etc.
     seasonRanking = processed.sort((a, b) => {
-    if (b.avg !== a.avg) return b.avg - a.avg;
-    const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
-    const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
-    if (maxB !== maxA) return maxB - maxA;
-    return a.title.localeCompare(b.title);
-});
+            if (b.avg !== a.avg) return b.avg - a.avg;
+            const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
+            const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
+            if (maxB !== maxA) return maxB - maxA;
+            return a.title.localeCompare(b.title);
+        });
 
-currentPage = 1;
-renderPage(currentPage);
+        saveSeasonCache(key, seasonRanking);
 
-saveSeasonCache(key, seasonRanking);
-updatePageButtons();
+        clearInterval(fakeInterval);
+        updateProgress(100);
+        setTimeout(() => progressContainer.style.display = 'none', 300);
+    } else {
+        seasonRanking = seasonData;
+        updateProgress(100);
+        setTimeout(() => progressContainer.style.display = 'none', 300);
+    }
 
+    // Siempre renderizamos correctamente la página actual
+    currentPage = 1;  // Puedes quitar esta línea si querés mantener la página actual al recargar la misma temporada
+    grid.innerHTML = '';
+    renderPage(currentPage);
+    updatePageButtons();
 
-    startCountdown();
     loading.textContent = '';
-    updateProgress(100);
-    setTimeout(() => {
-        progressContainer.style.display = 'none';
-    }, 300);
+    startCountdown();
 }
 // Retorna milisegundos restantes hasta que expire el caché de esta temporada
 function getTimeUntilNextUpdate(year, season) {
