@@ -803,15 +803,18 @@ for (const id of malIdsToFetch) {
    const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // TÍTULO: EXACTAMENTE como en tu versión vieja que funcionaba perfecto
-    let title = mal?.title_english || mal?.title || "Sin título";
+    // TÍTULO: Primero intentamos MAL (como en el viejo que te gustaba)
+    let title = mal?.title_english || mal?.title || null;
 
-    // Si MAL no tiene título (muy raro, pero por si acaso), fallback a AniList
-    if (!title || title === "Sin título") {
-        title = ani.title?.english || ani.title?.romaji || ani.title?.native || "Sin título";
+    // Si MAL no dio título (null o vacío), usamos AniList directamente
+    if (!title || !title.trim()) {
+        title = ani.title?.english || 
+                ani.title?.romaji || 
+                ani.title?.native || 
+                "Sin título";
     }
 
-    // IMAGEN: AniList prioridad (mejor calidad), MAL fallback
+    // IMAGEN: AniList prioridad, MAL fallback
     let imageUrl = ani.image ||
                    (mal?.images?.jpg?.large_image_url ||
                     'https://via.placeholder.com/300x450?text=Sin+Imagen');
