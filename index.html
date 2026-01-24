@@ -676,14 +676,17 @@ async function loadTop10() {
     // Obtener datos completos de MAL para los que tengan idMal
     const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
     // Obtener datos completos de MAL para los que tengan idMal (con cache)
+updateProgress(30);
+
+// Obtener datos de MAL con cache, retry y límite para evitar 429
 const malDataById = {};
 
-// Cache simple en localStorage (persiste entre recargas)
+// Cache en localStorage (persiste entre recargas)
 function getMalCache(id) {
     const raw = localStorage.getItem(`MAL_FULL_${id}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (Date.now() - parsed.timestamp > CACHE_TTL) { // mismo TTL que las temporadas
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
         localStorage.removeItem(`MAL_FULL_${id}`);
         return null;
     }
@@ -697,23 +700,23 @@ function saveMalCache(id, data) {
     }));
 }
 
-// Limitamos a los primeros 20 para no abusar rate limit
+// Solo enriquecemos los primeros 15 (los de más score) para no abusar
 const malIdsToFetch = aniList
     .filter(a => a.mal_id)
     .map(a => a.mal_id)
-    .slice(0, 20);  // ← ajustá este número si querés más/menos
+    .slice(0, 15);  // ← clave: límite bajo
 
 for (const id of malIdsToFetch) {
     let malData = getMalCache(id);
 
     if (!malData) {
         let attempts = 0;
-        while (attempts < 3) {  // reintentos en caso de 429
+        while (attempts < 3) {
             try {
                 const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
                 if (res.status === 429) {
-                    console.warn(`429 en MAL ID ${id} → esperando...`);
-                    await delay(5000 * (attempts + 1));  // backoff: 5s, 10s, 15s
+                    console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
+                    await delay(5000 * (attempts + 1));  // backoff exponencial
                     attempts++;
                     continue;
                 }
@@ -724,17 +727,15 @@ for (const id of malIdsToFetch) {
                     break;
                 }
             } catch (e) {
-                console.error("Error fetching MAL full for", id, e);
+                console.error("Error fetching MAL for", id, e);
                 break;
             }
             attempts++;
-            await delay(1200);  // delay normal entre requests
+            await delay(1500);  // delay normal 1.5s
         }
     }
 
-    if (malData) {
-        malDataById[id] = malData;
-    }
+    if (malData) malDataById[id] = malData;
 }
 
     updateProgress(60);
@@ -743,12 +744,14 @@ for (const id of malIdsToFetch) {
     const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // Imagen: priorizar MAL si existe, fallback a AniList coverImage
+    // Imagen segura: MAL primero, AniList fallback
     let imageUrl = '';
     if (mal?.images?.jpg?.large_image_url) {
         imageUrl = mal.images.jpg.large_image_url;
     } else if (ani.coverImage?.large) {
         imageUrl = ani.coverImage.large;
+    } else {
+        imageUrl = 'https://via.placeholder.com/300x450?text=No+Image';  // fallback bonito
     }
 
     return {
@@ -756,9 +759,9 @@ for (const id of malIdsToFetch) {
         title: mal?.title_english || mal?.title || ani.title?.english || ani.title?.romaji || "Sin título",
         image: imageUrl,
         mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-        al: ani.score ? ani.score.toFixed(2) : null,
+        al: ani.score ? ani.score.toFixed(2) : null,  // score de AniList
         al_id: ani.al_id,
-        type: ani.type || ani.format || 'Unknown'
+        type: ani.format || ani.type || 'Unknown'
     };
 });
     // ──────────────────────────────
