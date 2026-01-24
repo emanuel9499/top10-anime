@@ -1053,72 +1053,68 @@ if (scoreModeSelect) {
 scoreModeSelect?.addEventListener('change', function() {
     currentScoreMode = this.value;
     localStorage.setItem('scoreMode', currentScoreMode);
-    
-    // Si hay cards cargadas (no skeletons), re-renderizamos desde caché
-    if (grid.children.length > 0 && !grid.querySelector('.skeleton')) {
-        const year = parseInt(document.getElementById('year')?.value);
-        const season = document.getElementById('season')?.value;
-        if (year && season) {
-            const cached = getSeasonCache(seasonKey(year, season));
-            if (cached) {
-                grid.innerHTML = '';
-                cached.forEach((anime, i) => renderCard(anime, i));
-            }
-        }
-    }
+
+    // Actualiza los puntajes de la página actual, sin romper la paginación
+    const cards = grid.querySelectorAll('.anime-card');
+    cards.forEach((card, i) => {
+        const animeIndex = (currentPage - 1) * itemsPerPage + i;
+        const anime = seasonRanking[animeIndex];
+        if (!anime) return;
+
+        const malTextNode = card.querySelector('.scores').childNodes[0];
+        const alElement = card.querySelector('.scores span');
+        const avgElement = card.querySelector('.average');
+
+        const malVal = anime.mal !== 'N/A' ? parseFloat(anime.mal) : null;
+        const alVal  = anime.al  !== 'N/A' ? parseFloat(anime.al)  : null;
+
+        let avgNum = 0, sources = 0;
+        if (malVal !== null) { avgNum += malVal; sources++; }
+        if (alVal  !== null) { avgNum += alVal; sources++; }
+        const avgRaw = sources > 0 ? avgNum / sources : null;
+
+        const format = (num) => {
+            if (num === null) return 'N/A';
+            return currentScoreMode === 'percent' ? (num*10).toFixed(2)+'%' : num.toFixed(2);
+        };
+
+        if (malTextNode) malTextNode.textContent = `MAL: ${format(malVal)} | AniList: `;
+        if (alElement) alElement.textContent = alVal !== null ? format(alVal) : 'N/A (editar)';
+        if (avgElement) avgElement.textContent = `⭐ ${format(avgRaw)}`;
+    });
 });
 
+
 // Override seguro de renderCard (se define DESPUÉS de la función original)
-// Override seguro de renderCard
-const originalRenderCard = renderCard;
-renderCard = function(anime, index) {
-    originalRenderCard(anime, index);
+function updateScoreModeDisplay() {
+    const cards = document.querySelectorAll('.anime-card');
+    cards.forEach((card, i) => {
+        const anime = seasonRanking[(currentPage-1)*itemsPerPage + i];
+        if (!anime) return;
 
-    const card = grid.lastElementChild;
-    if (!card) return;
+        const malTextNode = card.querySelector('.scores').childNodes[0];
+        const alElement = card.querySelector('.scores span');
+        const avgElement = card.querySelector('.average');
 
-    const malTextNode = card.querySelector('.scores').childNodes[0]; // "MAL: xx.xx | "
-    const alElement   = card.querySelector('.scores span');
-    const avgElement  = card.querySelector('.average');
+        const malVal = anime.mal !== 'N/A' ? parseFloat(anime.mal) : null;
+        const alVal  = anime.al  !== 'N/A' ? parseFloat(anime.al)  : null;
 
-    // Valores seguros (igual que en processed y renderCard original)
-    // Valores seguros
-const malVal = anime.mal !== 'N/A' && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
-const alVal  = anime.al  !== 'N/A' && !isNaN(parseFloat(anime.al))  ? parseFloat(anime.al)  : null;
+        let avgNum = 0, sources = 0;
+        if (malVal !== null) { avgNum += malVal; sources++; }
+        if (alVal  !== null) { avgNum += alVal;  sources++; }
+        const avgRaw = sources > 0 ? avgNum / sources : null;
 
-// Promedio
-let avgNum = 0;
-let sources = 0;
-if (malVal !== null) { avgNum += malVal; sources++; }
-if (alVal  !== null) { avgNum += alVal;  sources++; }
+        const format = (num) => {
+            if (num === null) return 'N/A';
+            return currentScoreMode === 'percent' ? (num*10).toFixed(2)+'%' : num.toFixed(2);
+        };
 
-const avgRaw = sources === 2 ? avgNum / 2 :
-               sources === 1 ? avgNum :
-               null;
-
-// Formateador (ahora maneja N/A correctamente)
-const format = (num) => {
-    if (num === null) return 'N/A';
-    const formatted = currentScoreMode === 'percent'
-        ? (num * 10).toFixed(2) + '%'
-        : num.toFixed(2);
-    return formatted;
-};
-
-// Actualizar textos
-if (malTextNode) {
-    malTextNode.textContent = `MAL: ${format(malVal)} | AniList: `;
+        if (malTextNode) malTextNode.textContent = `MAL: ${format(malVal)} | AniList: `;
+        if (alElement) alElement.textContent = alVal !== null ? format(alVal) : 'N/A (editar)';
+        if (avgElement) avgElement.textContent = `⭐ ${format(avgRaw)}`;
+    });
 }
-if (alElement) {
-    alElement.textContent = format(alVal);
-    if (alElement.classList.contains('al-score') && alVal === null) {
-        alElement.textContent = 'N/A (editar)';
-    }
-}
-if (avgElement) {
-    avgElement.textContent = `⭐ ${format(avgRaw)}`;
-}
-};
+
 // FIN NUEVO (versión corregida)
 // ────────────────────────────────────────────────
 function getSelectedTypes() {
