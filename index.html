@@ -745,20 +745,24 @@ async function loadTop10() {
     const year = parseInt(document.getElementById('year').value);
     const season = document.getElementById('season').value;
     const key = seasonKey(year, season);
+
+    // Validación básica
+    if (!year || isNaN(year) || !season) {
+        loading.textContent = 'Por favor selecciona un año y temporada válidos';
+        progressContainer.style.display = 'none';
+        return;
+    }
+
     let fullRanking = getSeasonCache(key);
 
-    if (!year || isNaN(year) || !season) {
-    loading.textContent = 'Por favor selecciona un año y temporada válidos';
-    progressContainer.style.display = 'none';
-    return;
-}
-if (fullRanking) {
-    currentPage = 1;
-    renderPage();                    // ← Llama a la nueva función
-    loading.textContent = '';
-    progressContainer.style.display = 'none';
-    return;
-}
+    if (fullRanking && fullRanking.length > 0) {
+        currentPage = 1;
+        renderPage();
+        loading.textContent = '';
+        progressContainer.style.display = 'none';
+        startCountdown();
+        return;
+    }
 
     loading.textContent = 'Cargando temporada...';
     progressContainer.style.display = 'block';
@@ -771,190 +775,113 @@ if (fullRanking) {
         if (fakeProgress < 85) updateProgress(fakeProgress);
     }, 300);
 
-    // ──────────────────────────────
-    // Aquí va el bloque que pegaste (reemplaza lo viejo de malList)
+    // Cargar datos de AniList
     const aniList = await fetchSeasonFromAniList(year, season);
     updateProgress(30);
 
-    // Obtener datos completos de MAL para los que tengan idMal
-    const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
-    // Obtener datos completos de MAL para los que tengan idMal (con cache)
-updateProgress(30);
+    // Preparar MAL
+    const malDataById = {};
+    const malIdsToFetch = aniList
+        .filter(a => a.mal_id)
+        .map(a => a.mal_id)
+        .slice(0, 15);
 
-// Obtener datos de MAL con cache, retry y límite para evitar 429
-const malDataById = {};
-
-// Cache en localStorage (persiste entre recargas)
-function getMalCache(id) {
-    const raw = localStorage.getItem(`MAL_FULL_${id}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Date.now() - parsed.timestamp > CACHE_TTL) {
-        localStorage.removeItem(`MAL_FULL_${id}`);
-        return null;
-    }
-    return parsed.data;
-}
-
-function saveMalCache(id, data) {
-    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
-        timestamp: Date.now(),
-        data
-    }));
-}
-
-// Solo enriquecemos los primeros 15 (los de más score) para no abusar
-const malIdsToFetch = aniList
-    .filter(a => a.mal_id)
-    .map(a => a.mal_id)
-    .slice(0, 15);  // ← clave: límite bajo
-
-for (const id of malIdsToFetch) {
-    let malData = getMalCache(id);
-
-    if (!malData) {
-        let attempts = 0;
-        while (attempts < 3) {
-            try {
-                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
-                if (res.status === 429) {
-                    console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
-                    await delay(5000 * (attempts + 1));  // backoff exponencial
-                    attempts++;
-                    continue;
-                }
-                if (res.ok) {
-                    const data = await res.json();
-                    malData = data.data;
-                    saveMalCache(id, malData);
+    for (const id of malIdsToFetch) {
+        let malData = getMalCache(id);
+        if (!malData) {
+            let attempts = 0;
+            while (attempts < 3) {
+                try {
+                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                    if (res.status === 429) {
+                        await delay(5000 * (attempts + 1));
+                        attempts++;
+                        continue;
+                    }
+                    if (res.ok) {
+                        const data = await res.json();
+                        malData = data.data;
+                        saveMalCache(id, malData);
+                        break;
+                    }
+                } catch (e) {
+                    console.error("Error fetching MAL", id, e);
                     break;
                 }
-            } catch (e) {
-                console.error("Error fetching MAL for", id, e);
-                break;
+                attempts++;
+                await delay(1500);
             }
-            attempts++;
-            await delay(1500);  // delay normal 1.5s
         }
+        if (malData) malDataById[id] = malData;
     }
-
-    if (malData) malDataById[id] = malData;
-}
 
     updateProgress(60);
 
-    // Combinar: AniList como base, enriquecer con MAL donde exista
-   const enrichedList = aniList.map(ani => {
-    const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+    // Combinar AniList + MAL
+    const enrichedList = aniList.map(ani => {
+        const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // TÍTULO FINAL (MAL EN > AniList EN > AniList Romaji > Native)
-let title = null;
+        let title = mal?.title_english?.trim() || mal?.title?.trim() ||
+                    ani.titles?.english || ani.titles?.romaji || ani.titles?.native || "Sin título";
 
-// 1️⃣ MAL inglés
-if (mal?.title_english && mal.title_english.trim() !== '') {
-    title = mal.title_english.trim();
-}
-// 2️⃣ MAL fallback (romaji/japonés)
-else if (mal?.title && mal.title.trim() !== '') {
-    title = mal.title.trim();
-}
-// 3️⃣ AniList inglés
-else if (ani.titles?.english) {
-    title = ani.titles.english;
-}
-// 4️⃣ AniList romaji
-else if (ani.titles?.romaji) {
-    title = ani.titles.romaji;
-}
-// 5️⃣ AniList native
-else if (ani.titles?.native) {
-    title = ani.titles.native;
-}
-// 6️⃣ último recurso
-else {
-    title = "Sin título";
-}
+        let imageUrl = ani.image ||
+                       mal?.images?.jpg?.large_image_url ||
+                       'https://via.placeholder.com/300x450?text=Sin+Imagen';
 
-    // IMAGEN: AniList rey, MAL backup
-    let imageUrl = ani.image ||
-                   (mal?.images?.jpg?.large_image_url ||
-                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
-
-    return {
-        mal_id: ani.mal_id,
-        title: title.trim() || "Sin título",
-        image: imageUrl,
-        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-        al: ani.score ? ani.score.toFixed(2) : null,
-        al_id: ani.al_id,
-        type: ani.format || 'Unknown'
-    };
-});
-    // ──────────────────────────────
+        return {
+            mal_id: ani.mal_id,
+            title: title.trim(),
+            image: imageUrl,
+            mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
+            al: ani.score ? ani.score.toFixed(2) : null,
+            al_id: ani.al_id,
+            type: ani.format || 'Unknown'
+        };
+    });
 
     clearInterval(fakeInterval);
     updateProgress(90);
 
-    // Aquí sigue tu código original de alData (si lo mantenés)
-    // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
-
+    // Procesar promedios
     const processed = enrichedList.map(ani => {
-    const malScoreRaw = ani.mal ?? null;
-    let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
+        const malNum = ani.mal != null ? ani.mal : null;
+        const alNum = ani.al ?? parseFloat(getManualScore(ani.mal_id)) || null;
 
-    // Si no hay manual y no hay MAL → usar AniList (ya debería venir)
-    if (alScoreRaw == null && ani.al != null) {
-        alScoreRaw = ani.al;
-    }
+        let avgNum = 0;
+        let count = 0;
+        if (malNum != null) { avgNum += malNum; count++; }
+        if (alNum != null) { avgNum += alNum; count++; }
+        const avg = count > 0 ? (avgNum / count).toFixed(2) : 'N/A';
 
-    // Números seguros (evitar NaN)
-    const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
-    const alNum = alScoreRaw != null && !isNaN(alScoreRaw) ? parseFloat(alScoreRaw) : null;
+        return {
+            title: ani.title || "Sin título",
+            image: ani.image,
+            mal: malNum?.toFixed(2) ?? 'N/A',
+            al: alNum?.toFixed(2) ?? 'N/A',
+            avg,
+            mal_id: ani.mal_id,
+            al_id: ani.al_id
+        };
+    });
 
-    // Promedio
-    let avgNum = 0;
-    let sourcesCount = 0;
-    if (malNum != null) { avgNum += malNum; sourcesCount++; }
-    if (alNum != null) { avgNum += alNum; sourcesCount++; }
-    if (sourcesCount > 0) avgNum /= sourcesCount;
+    // Ordenar y guardar
+    fullRanking = processed.sort((a, b) => {
+        const avgA = parseFloat(a.avg) || 0;
+        const avgB = parseFloat(b.avg) || 0;
+        if (avgB !== avgA) return avgB - avgA;
+        return a.title.localeCompare(b.title);
+    });
 
-    // Imagen FINAL: AniList es rey
-    let finalImage = ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen';
+    saveSeasonCache(key, fullRanking);
 
-    return {
-        title: ani.title || "Sin título",  // ya viene de AniList
-        image: finalImage,
-        mal: malNum != null ? malNum.toFixed(2) : 'N/A',
-        al: alNum != null ? alNum.toFixed(2) : 'N/A',
-        avg: avgNum.toFixed(2),
-        sources: sourcesCount,
-        mal_id: ani.mal_id,
-        al_id: ani.al_id
-    };
-});
-    // Ordenar TODA la lista (ranking completo)
-fullRanking = processed.sort((a, b) => {
-    if (b.avg !== a.avg) return b.avg - a.avg;
-    const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
-    const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
-    if (maxB !== maxA) return maxB - maxA;
-    return a.title.localeCompare(b.title);
-});
+    // Renderizar
+    currentPage = 1;
+    renderPage();
 
-// Guardamos la lista completa
-// Guardamos la lista completa
-saveSeasonCache(key, fullRanking);
-
-// Renderizamos la primera página **después** de tener los datos
-currentPage = 1;
-renderPage();
-
-startCountdown();
-loading.textContent = '';
-updateProgress(100);
-setTimeout(() => {
-    progressContainer.style.display = 'none';
-}, 300);
+    startCountdown();
+    loading.textContent = '';
+    updateProgress(100);
+    setTimeout(() => progressContainer.style.display = 'none', 300);
 }
 // Renderiza SOLO la página actual
 function renderPage() {
