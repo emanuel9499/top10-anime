@@ -219,6 +219,13 @@ frames pulse {
         <option value="summer">Summer</option>
         <option value="fall">Fall</option>
     </select>
+    <div class="type-filters" style="margin: 15px auto; font-size: 1.1em;">
+    <label><input type="checkbox" id="type-tv" checked disabled> TV</label>
+    <label><input type="checkbox" id="type-ona" checked> ONA</label>
+    <label><input type="checkbox" id="type-movie"> Movie</label>
+    <label><input type="checkbox" id="type-ova"> OVA</label>
+    <label><input type="checkbox" id="type-special"> Special</label>
+</div>
     <button onclick="loadTop10()">Buscar</button>
 </div>
 <div id="updateInfo" style="margin: 15px auto; font-size: 1.1em; color: #ff9999; min-height: 1.5em;">
@@ -244,24 +251,36 @@ const loading = document.getElementById('loading');
 const progressContainer = document.getElementById('progressContainer');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
-
 window.onload = () => {
-    const y = document.getElementById('year'); // ← ESTA LÍNEA FALTABA
+    const y = document.getElementById('year');
     const currentYear = new Date().getFullYear();
-
     for (let i = currentYear; i >= 1990; i--) {
         const o = document.createElement('option');
         o.value = i;
         o.textContent = i;
         y.appendChild(o);
     }
-
     y.value = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0);
+    
     startCountdown();
     document.getElementById('year').addEventListener('change', startCountdown);
     document.getElementById('season').addEventListener('change', startCountdown);
-};
 
+    // ────────────────────────────────────────────────
+    //  ← NUEVO: listeners para los checkboxes
+    const checkboxes = document.querySelectorAll('.type-filters input[type="checkbox"]');
+    checkboxes.forEach(chk => {
+        chk.addEventListener('change', () => {
+            const year = document.getElementById('year').value;
+            const season = document.getElementById('season').value;
+            if (year && season) {
+                localStorage.removeItem(seasonKey(year, season));
+            }
+            loadTop10();           // recarga automática al cambiar tipo
+        });
+    });
+    // ────────────────────────────────────────────────
+};
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
@@ -296,24 +315,39 @@ function cleanupCache() {
 }
 
 async function fetchSeasonMAL(year, season) {
-    let page = 1, animes = [];
-    while (animes.length < 40 && page <= 5) {
-        const res = await fetch(`https://api.jikan.moe/v4/seasons/${year}/${season}?order_by=score&sort=desc&page=${page}&limit=25`);
+    let page = 1;
+    let animes = [];
+    const allowedTypes = getSelectedTypes(); // ← aquí usamos los checkboxes
+
+    // Si no hay ninguno seleccionado → evitamos loop infinito, devolvemos vacío
+    if (allowedTypes.length === 0) return [];
+
+    while (animes.length < 40 && page <= 6) {  // subí un poco el límite por si filtras mucho
+        const res = await fetch(
+            `https://api.jikan.moe/v4/seasons/${year}/${season}?order_by=score&sort=desc&page=${page}&limit=25`
+        );
+        if (!res.ok) break;
+        
         const data = await res.json();
-        animes = animes.concat(
-  data.data.filter(a =>
-    a.score &&
-    a.type === "TV" || (a.type === "ONA" && a.episodes >= 6)
+        const pageItems = data.data || [];
 
-  )
-);
+        // Filtramos SOLO por los tipos permitidos
+        // Ya no hay condición de episodes >=6 para ONA
+        const filtered = pageItems.filter(a => {
+            if (!a.score) return false;                    // sin score → fuera
+            return allowedTypes.includes(a.type);          // ← decisión principal
+        });
 
+        animes = animes.concat(filtered);
         page++;
-        await delay(400);
+        await delay(420);  // un poquito más de delay por seguridad
     }
+
+    // Ordenamos por score descendente (por si el API no lo respeta al 100%)
+    animes.sort((a, b) => (b.score || 0) - (a.score || 0));
+
     return animes.slice(0, 40);
 }
-
 async function fetchAniListBatch(malIds) {
     const results = {};
     const missingIds = [];
@@ -629,6 +663,15 @@ function startCountdown() {
     
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = setInterval(updateCountdown, 1000);
+}
+function getSelectedTypes() {
+    const types = [];
+    if (document.getElementById('type-tv').checked)     types.push("TV");
+    if (document.getElementById('type-ona').checked)    types.push("ONA");
+    if (document.getElementById('type-movie').checked)  types.push("Movie");
+    if (document.getElementById('type-ova').checked)    types.push("OVA");
+    if (document.getElementById('type-special').checked) types.push("Special");
+    return types;
 }
 </script>
 </body>
