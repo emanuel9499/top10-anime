@@ -793,24 +793,48 @@ async function lazyLoadMalScores(page) {
             continue;
         }
 
-        try {
-            const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/full`);
-            if (!res.ok) continue;
+        let attempts = 0;
+        const maxAttempts = 3;
 
-            const data = await res.json();
-            const score = data.data?.score ? parseFloat(data.data.score.toFixed(2)) : null;
+        while (attempts < maxAttempts) {
+            try {
+                const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/full`);
 
-            if (score) {
-                malDataCache[malId] = { score };
-                saveMalCache(malId, { score });
+                if (res.status === 429) {
+                    // Backoff exponencial: 5s → 10s → 20s...
+                    const waitTime = 5000 * Math.pow(2, attempts);
+                    console.warn(`429 en MAL ID ${malId} → esperando ${waitTime/1000}s`);
+                    loading.textContent = `Rate limit MAL... esperando ${waitTime/1000}s`;
+                    await delay(waitTime);
+                    attempts++;
+                    continue;
+                }
+
+                if (!res.ok) {
+                    console.warn(`Error ${res.status} en MAL ID ${malId}`);
+                    break;
+                }
+
+                const data = await res.json();
+                const score = data.data?.score ? parseFloat(data.data.score.toFixed(2)) : null;
+
+                if (score) {
+                    malDataCache[malId] = { score };
+                    saveMalCache(malId, { score });
+                }
+
+                // Delay normal MUY conservador
+                await delay(3500);  // 3.5 segundos entre requests → ~17 req/min, seguro
+                break;  // éxito, salimos del while
+            } catch (e) {
+                console.warn("Error fetch Jikan", malId, e);
+                attempts++;
+                await delay(5000 * attempts);  // backoff si error de red
             }
-
-            await delay(600);
-        } catch (e) {
-            console.warn("Error Jikan", malId, e);
         }
     }
 
+    // Actualizar rankings y re-render
     seasonRanking = seasonRanking.map(anime => {
         if (!anime.mal_id || anime.mal !== 'N/A') return anime;
 
