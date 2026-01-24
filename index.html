@@ -800,7 +800,6 @@ async function loadTop10() {
             const key = seasonKey(year, season);
             let seasonData = getSeasonCache(key);
 
-            loading.textContent = seasonData ? 'Cargado desde caché...' : 'Cargando temporada...';
             progressContainer.style.display = 'block';
             updateProgress(0, 'Iniciando...');
 
@@ -869,7 +868,7 @@ async function loadTop10() {
 
                         processedMal++;
                         const malProgress = 30 + (55 * (processedMal / totalMal));
-                        updateProgress(Math.min(85, malProgress), `Procesando MAL (${processedMal}/${totalMal})`);
+                        updateProgress(Math.min(85, malProgress), `Procesando (${processedMal} de ${totalMal})`);
                     }
                 }
 
