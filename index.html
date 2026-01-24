@@ -304,6 +304,7 @@ const CACHE_TTL = 4 * 60 * 60 * 1000;     // 4 horas
 const MAX_SEASONS_CACHED = 25;
 const BATCH_SIZE = 15;
 
+
 const grid = document.getElementById('grid');
 const loading = document.getElementById('loading');
 const progressContainer = document.getElementById('progressContainer');
@@ -777,12 +778,11 @@ updateProgress(30);
 const malDataById = {};
 
 
-// Solo enriquecemos los primeros 15 (los de más score) para no abusar
-const malIdsToFetch = aniList
-    .filter(a => a.mal_id)
-    .map(a => a.mal_id)
+// TODOS los animes de la temporada con MAL ID
+const malIdsToFetch = aniList.filter(a => a.mal_id).map(a => a.mal_id);
 
-    const BATCH_SIZE = 5;
+
+const BATCH_SIZE = 5;
 const DELAY_MS = 2000;
 
 for (let i = 0; i < malIdsToFetch.length; i += BATCH_SIZE) {
@@ -793,8 +793,7 @@ for (let i = 0; i < malIdsToFetch.length; i += BATCH_SIZE) {
 }
 
 
-    
-
+  
 
 
     updateProgress(60);
@@ -804,47 +803,34 @@ for (let i = 0; i < malIdsToFetch.length; i += BATCH_SIZE) {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
     // TÍTULO FINAL (MAL EN > AniList EN > AniList Romaji > Native)
-let title = null;
+    const title = ani.titles?.english ||
+              ani.titles?.romaji ||
+              ani.titles?.native ||
+              (mal?.title_english || mal?.title) ||
+              "Sin título";
 
-// 1️⃣ MAL inglés
-if (mal?.title_english && mal.title_english.trim() !== '') {
-    title = mal.title_english.trim();
-}
-// 2️⃣ MAL fallback (romaji/japonés)
-else if (mal?.title && mal.title.trim() !== '') {
-    title = mal.title.trim();
-}
-// 3️⃣ AniList inglés
-else if (ani.titles?.english) {
-    title = ani.titles.english;
-}
-// 4️⃣ AniList romaji
-else if (ani.titles?.romaji) {
-    title = ani.titles.romaji;
-}
-// 5️⃣ AniList native
-else if (ani.titles?.native) {
-    title = ani.titles.native;
-}
-// 6️⃣ último recurso
-else {
-    title = "Sin título";
-}
+const imageUrl = ani.image || (mal?.images?.jpg?.large_image_url) || 'https://via.placeholder.com/300x450?text=Sin+Imagen';
 
-    // IMAGEN: AniList rey, MAL backup
-    let imageUrl = ani.image ||
-                   (mal?.images?.jpg?.large_image_url ||
-                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
+const malScore = mal?.score ? parseFloat(mal.score.toFixed(2)) : null;
+const alScore  = ani.score ? parseFloat(ani.score.toFixed(2)) : null;
+
+let avgNum = 0, count = 0;
+if (malScore !== null) { avgNum += malScore; count++; }
+if (alScore  !== null) { avgNum += alScore; count++; }
+const avg = count > 0 ? avgNum.toFixed(2) : 'N/A';
+
 
     return {
-        mal_id: ani.mal_id,
-        title: title.trim() || "Sin título",
-        image: imageUrl,
-        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-        al: ani.score ? ani.score.toFixed(2) : null,
-        al_id: ani.al_id,
-        type: ani.format || 'Unknown'
-    };
+    mal_id: ani.mal_id,
+    al_id: ani.al_id,
+    title,
+    image: imageUrl,
+    mal: malScore,
+    al: alScore,
+    avg,
+    type: ani.format
+};
+
 });
     // ──────────────────────────────
 
@@ -1162,6 +1148,7 @@ async function fetchMalFull(id) {
         return null;
     }
 }
+
 // Cache en localStorage (persiste entre recargas)
 function getMalCache(id) {
     const raw = localStorage.getItem(`MAL_FULL_${id}`);
