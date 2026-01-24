@@ -746,6 +746,12 @@ async function loadTop10() {
     const season = document.getElementById('season').value;
     const key = seasonKey(year, season);
     let fullRanking = getSeasonCache(key);
+
+    if (!year || isNaN(year) || !season) {
+    loading.textContent = 'Por favor selecciona un año y temporada válidos';
+    progressContainer.style.display = 'none';
+    return;
+}
 if (fullRanking) {
     currentPage = 1;
     renderPage();                    // ← Llama a la nueva función
@@ -936,37 +942,45 @@ fullRanking = processed.sort((a, b) => {
 });
 
 // Guardamos la lista completa
+// Guardamos la lista completa
 saveSeasonCache(key, fullRanking);
 
-// Renderizamos la primera página
+// Renderizamos la primera página **después** de tener los datos
 currentPage = 1;
 renderPage();
-   
 
-    startCountdown();
-    loading.textContent = '';
-    updateProgress(100);
-    setTimeout(() => {
-        progressContainer.style.display = 'none';
-    }, 300);
+startCountdown();
+loading.textContent = '';
+updateProgress(100);
+setTimeout(() => {
+    progressContainer.style.display = 'none';
+}, 300);
 }
 // Renderiza SOLO la página actual
 function renderPage() {
     grid.innerHTML = '';
 
     const totalItems = fullRanking.length;
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1; // ← Evita división por 0
+
+    // Si no hay animes, mostramos mensaje
+    if (totalItems === 0) {
+        grid.innerHTML = '<div style="font-size: 1.5em; color: #ff6666; padding: 40px;">No se encontraron animes para esta temporada con los filtros seleccionados.</div>';
+        document.getElementById('pageInfo').textContent = 'Página 1 de 1 (0 animes)';
+        document.getElementById('prevPage').disabled = true;
+        document.getElementById('nextPage').disabled = true;
+        return;
+    }
 
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
+    const end = Math.min(start + ITEMS_PER_PAGE, totalItems);
     const pageItems = fullRanking.slice(start, end);
 
     pageItems.forEach((anime, idx) => {
-        const globalIndex = start + idx; // Posición real en el ranking completo
+        const globalIndex = start + idx;
         renderCard(anime, globalIndex);
     });
 
-    // Actualizar info de paginación
     document.getElementById('pageInfo').textContent = 
         `Página ${currentPage} de ${totalPages} (${totalItems} animes)`;
 
@@ -974,7 +988,7 @@ function renderPage() {
     const nextBtn = document.getElementById('nextPage');
 
     prevBtn.disabled = currentPage === 1;
-    nextBtn.disabled = currentPage === totalPages || totalPages === 0;
+    nextBtn.disabled = currentPage >= totalPages;
 }
 
 // Cambia de página
