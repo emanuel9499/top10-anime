@@ -702,31 +702,33 @@ async function renderPage(page) {
 
     grid.innerHTML = '';
 
-    // Recorremos los animes de la página
-    for (let i = 0; i < pageItems.length; i++) {
-        const anime = pageItems[i];
+    pageItems.forEach((anime, i) => {
+        const cardIndex = start + i;
 
-        // Si mal score no existe pero tenemos mal_id → lazy fetch
         if (anime.mal === null && anime.mal_id) {
-            // Render skeleton mientras llega el score
+            // render skeleton
             const skeletonCard = document.createElement('div');
             skeletonCard.className = 'skeleton';
             grid.appendChild(skeletonCard);
 
-            // Fetch MAL
+            // fetch MAL
             fetchMalFull(anime.mal_id).then(malData => {
                 if (malData) {
                     anime.mal = malData.score ? parseFloat(malData.score.toFixed(2)) : null;
-                    anime.title = anime.title || malData.title_english || malData.title || anime.title; // fallback
+                    anime.title = anime.title || malData.title_english || malData.title || anime.title;
                     anime.image = anime.image || malData.images?.jpg?.large_image_url || anime.image;
                 }
-                // Re-renderizamos la página para actualizar scores
-                renderPage(page);
+                // reemplazar skeleton por card real
+                const card = document.createElement('div');
+                card.className = 'anime-card';
+                grid.replaceChild(card, skeletonCard); // swap skeleton -> card
+                renderCard(anime, cardIndex);
             }).catch(e => console.error("Error fetch MAL lazy", anime.mal_id, e));
         } else {
-            renderCard(anime, start + i);
+            // renderizar directamente
+            renderCard(anime, cardIndex);
         }
-    }
+    });
 
     updatePageButtons();
 }
