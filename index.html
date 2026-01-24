@@ -803,15 +803,15 @@ for (const id of malIdsToFetch) {
    const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // TÍTULO: Prioridad estricta a INGLÉS, luego romaji solo como último recurso
-    let title = mal?.title?.english ||                 // 1. Inglés de MAL (prioridad máxima)
-                ani.title?.english ||                     // 2. Inglés de AniList
-                mal?.title ||                             // 3. Romaji/japonés de MAL
-                ani.title?.romaji ||                      // 4. Romaji de AniList
-                ani.title?.native ||                      // 5. Kanji de AniList
-                "Sin título";
+    // TÍTULO: EXACTAMENTE como en tu versión vieja que funcionaba perfecto
+    let title = mal?.title_english || mal?.title || "Sin título";
 
-    // IMAGEN: AniList primero, MAL fallback
+    // Si MAL no tiene título (muy raro, pero por si acaso), fallback a AniList
+    if (!title || title === "Sin título") {
+        title = ani.title?.english || ani.title?.romaji || ani.title?.native || "Sin título";
+    }
+
+    // IMAGEN: AniList prioridad (mejor calidad), MAL fallback
     let imageUrl = ani.image ||
                    (mal?.images?.jpg?.large_image_url ||
                     'https://via.placeholder.com/300x450?text=Sin+Imagen');
