@@ -288,6 +288,7 @@ const loading = document.getElementById('loading');
 const progressContainer = document.getElementById('progressContainer');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
+
 window.onload = () => {
     const y = document.getElementById('year');
     const currentYear = new Date().getFullYear();
@@ -297,26 +298,62 @@ window.onload = () => {
         o.textContent = i;
         y.appendChild(o);
     }
-    y.value = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0);
-    
-    startCountdown();
-    document.getElementById('year').addEventListener('change', startCountdown);
-    document.getElementById('season').addEventListener('change', startCountdown);
 
-    // ────────────────────────────────────────────────
-    //  ← NUEVO: listeners para los checkboxes
-    const checkboxes = document.querySelectorAll('.type-filters input[type="checkbox"]');
+    // Restaurar año, temporada y checkboxes desde localStorage
+    const savedYear = localStorage.getItem('selectedYear');
+    const savedSeason = localStorage.getItem('selectedSeason');
+    const savedTypes = JSON.parse(localStorage.getItem('selectedTypes') || '[]');
+
+    if (savedYear && y.options.namedItem(savedYear)) {
+        y.value = savedYear;
+    } else {
+        y.value = currentYear + (new Date().getMonth() >= 9 ? 1 : 0);
+    }
+
+    if (savedSeason) {
+        document.getElementById('season').value = savedSeason;
+    }
+
+    // Restaurar checkboxes (TV siempre checked/disabled)
+    document.getElementById('type-ona').checked    = savedTypes.includes("ONA");
+    document.getElementById('type-movie').checked  = savedTypes.includes("Movie");
+    document.getElementById('type-ova').checked    = savedTypes.includes("OVA");
+    document.getElementById('type-special').checked = savedTypes.includes("Special");
+
+    startCountdown();
+    document.getElementById('year').addEventListener('change', () => {
+        localStorage.setItem('selectedYear', document.getElementById('year').value);
+        startCountdown();
+    });
+    document.getElementById('season').addEventListener('change', () => {
+        localStorage.setItem('selectedSeason', document.getElementById('season').value);
+        startCountdown();
+    });
+
+    // Guardar checkboxes cada vez que cambian
+    const checkboxes = document.querySelectorAll('.type-filters input[type="checkbox"]:not([disabled])');
     checkboxes.forEach(chk => {
         chk.addEventListener('change', () => {
+            const selectedTypes = [];
+            if (document.getElementById('type-ona').checked)    selectedTypes.push("ONA");
+            if (document.getElementById('type-movie').checked)  selectedTypes.push("Movie");
+            if (document.getElementById('type-ova').checked)    selectedTypes.push("OVA");
+            if (document.getElementById('type-special').checked) selectedTypes.push("Special");
+
+            localStorage.setItem('selectedTypes', JSON.stringify(selectedTypes));
+
+            // Invalidar caché y recargar automáticamente
             const year = document.getElementById('year').value;
             const season = document.getElementById('season').value;
             if (year && season) {
                 localStorage.removeItem(seasonKey(year, season));
             }
-           
+            loadTop10();
         });
     });
-    // ────────────────────────────────────────────────
+
+    // Cargar automáticamente la última selección al entrar (opcional pero recomendado)
+    loadTop10();
 };
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -799,7 +836,13 @@ for (const id of malIdsToFetch) {
     };
 });
     // El resto sigue igual: sort, slice(0,10), render, cache, etc.
-    top10 = processed.sort(/* tu lógica de sort actual */).slice(0, 10);
+    top10 = processed.sort((a, b) => {
+    if (b.avg !== a.avg) return b.avg - a.avg;
+    const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
+    const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
+    if (maxB !== maxA) return maxB - maxA;
+    return a.title.localeCompare(b.title);
+}).slice(0, 10);
 
     grid.innerHTML = '';
     top10.forEach((anime, i) => renderCard(anime, i));
