@@ -233,6 +233,9 @@ frames pulse {
 </head>
 <body>
 <h1>Top 10 Animes por Temporada</h1>
+<div id="updateInfo" style="margin: 15px auto; font-size: 1.1em; color: #ff9999; min-height: 1.5em;">
+    Próxima actualización en: <span id="countdown">--:--:--</span>
+</div>
 <div id="loading" class="loading">Seleccioná temporada y año</div>
 <div class="controls">
     <select id="year"></select>
@@ -264,10 +267,6 @@ frames pulse {
     </div>
 
     <button onclick="loadTop10()">Buscar</button>
-</div>
-
-<div id="updateInfo" style="margin: 15px auto; font-size: 1.1em; color: #ff9999; min-height: 1.5em;">
-    Próxima actualización en: <span id="countdown">--:--:--</span>
 </div>
 
 <div id="progressContainer" class="progress-container">
