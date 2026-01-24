@@ -184,9 +184,9 @@ button:hover { transform:scale(1.05); }
     background-size: 200% 100%;
     animation: pulse 1.5s infinite;
 }
-@keyframes pulse {
-    0% { background-position: 0% }
-    100% { background-position: 200% }
+frames pulse {
+    0% { background-position:0% }
+    100% { background-position:200% }
 }
 @media(max-width:1200px){ .grid{grid-template-columns:repeat(3,1fr);} }
 @media(max-width:800px){ 
@@ -229,31 +229,6 @@ button:hover { transform:scale(1.05); }
     box-shadow: 0 0 8px rgba(204,0,0,0.4);
 }
 
-.pagination button {
-    padding: 10px 18px;
-    font-size: 1.1em;
-    border: 2px solid #cc0000;
-    background: #111;
-    color: #fff;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all .2s;
-}
-
-.pagination button:hover:not(:disabled) {
-    background: #cc0000;
-    transform: scale(1.08);
-}
-
-.pagination button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.pagination span {
-    min-width: 140px;
-    text-align: center;
-}
 </style>
 </head>
 <body>
@@ -302,11 +277,6 @@ button:hover { transform:scale(1.05); }
 
 
 <div id="grid" class="grid"></div>
-<div id="pagination" class="pagination" style="margin: 40px auto; font-size: 1.2em; display: flex; justify-content: center; align-items: center; gap: 15px; flex-wrap: wrap;">
-    <button id="prevPage" onclick="changePage(-1)" disabled>Anterior</button>
-    <span id="pageInfo">Página 1 de 1</span>
-    <button id="nextPage" onclick="changePage(1)" disabled>Siguiente</button>
-</div>
 
 <script>
 const CACHE_TTL = 4 * 60 * 60 * 1000;     // 4 horas
@@ -318,10 +288,6 @@ const loading = document.getElementById('loading');
 const progressContainer = document.getElementById('progressContainer');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
-
-let currentPage = 1;
-const ITEMS_PER_PAGE = 10;
-let fullRanking = []; // Aquí guardaremos TODOS los animes ordenados
 
 window.onload = () => {
     const y = document.getElementById('year');
@@ -745,22 +711,13 @@ async function loadTop10() {
     const year = parseInt(document.getElementById('year').value);
     const season = document.getElementById('season').value;
     const key = seasonKey(year, season);
+    let top10 = getSeasonCache(key);
 
-    // Validación básica
-    if (!year || isNaN(year) || !season) {
-        loading.textContent = 'Por favor selecciona un año y temporada válidos';
-        progressContainer.style.display = 'none';
-        return;
-    }
-
-    let fullRanking = getSeasonCache(key);
-
-    if (fullRanking && fullRanking.length > 0) {
-        currentPage = 1;
-        renderPage();
+    if (top10) {
+        grid.innerHTML = '';
+        top10.forEach((anime, i) => renderCard(anime, i));
         loading.textContent = '';
         progressContainer.style.display = 'none';
-        startCountdown();
         return;
     }
 
@@ -775,157 +732,187 @@ async function loadTop10() {
         if (fakeProgress < 85) updateProgress(fakeProgress);
     }, 300);
 
-    // Cargar datos de AniList
+    // ──────────────────────────────
+    // Aquí va el bloque que pegaste (reemplaza lo viejo de malList)
     const aniList = await fetchSeasonFromAniList(year, season);
     updateProgress(30);
 
-    // Preparar MAL
-    const malDataById = {};
-    const malIdsToFetch = aniList
-        .filter(a => a.mal_id)
-        .map(a => a.mal_id)
-        .slice(0, 15);
+    // Obtener datos completos de MAL para los que tengan idMal
+    const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
+    // Obtener datos completos de MAL para los que tengan idMal (con cache)
+updateProgress(30);
 
-    for (const id of malIdsToFetch) {
-        let malData = getMalCache(id);
-        if (!malData) {
-            let attempts = 0;
-            while (attempts < 3) {
-                try {
-                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
-                    if (res.status === 429) {
-                        await delay(5000 * (attempts + 1));
-                        attempts++;
-                        continue;
-                    }
-                    if (res.ok) {
-                        const data = await res.json();
-                        malData = data.data;
-                        saveMalCache(id, malData);
-                        break;
-                    }
-                } catch (e) {
-                    console.error("Error fetching MAL", id, e);
+// Obtener datos de MAL con cache, retry y límite para evitar 429
+const malDataById = {};
+
+// Cache en localStorage (persiste entre recargas)
+function getMalCache(id) {
+    const raw = localStorage.getItem(`MAL_FULL_${id}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+        localStorage.removeItem(`MAL_FULL_${id}`);
+        return null;
+    }
+    return parsed.data;
+}
+
+function saveMalCache(id, data) {
+    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
+        timestamp: Date.now(),
+        data
+    }));
+}
+
+// Solo enriquecemos los primeros 15 (los de más score) para no abusar
+const malIdsToFetch = aniList
+    .filter(a => a.mal_id)
+    .map(a => a.mal_id)
+    .slice(0, 15);  // ← clave: límite bajo
+
+for (const id of malIdsToFetch) {
+    let malData = getMalCache(id);
+
+    if (!malData) {
+        let attempts = 0;
+        while (attempts < 3) {
+            try {
+                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                if (res.status === 429) {
+                    console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
+                    await delay(5000 * (attempts + 1));  // backoff exponencial
+                    attempts++;
+                    continue;
+                }
+                if (res.ok) {
+                    const data = await res.json();
+                    malData = data.data;
+                    saveMalCache(id, malData);
                     break;
                 }
-                attempts++;
-                await delay(1500);
+            } catch (e) {
+                console.error("Error fetching MAL for", id, e);
+                break;
             }
+            attempts++;
+            await delay(1500);  // delay normal 1.5s
         }
-        if (malData) malDataById[id] = malData;
     }
+
+    if (malData) malDataById[id] = malData;
+}
 
     updateProgress(60);
 
-    // Combinar AniList + MAL
-    const enrichedList = aniList.map(ani => {
-        const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+    // Combinar: AniList como base, enriquecer con MAL donde exista
+   const enrichedList = aniList.map(ani => {
+    const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-        let title = mal?.title_english?.trim() || mal?.title?.trim() ||
-                    ani.titles?.english || ani.titles?.romaji || ani.titles?.native || "Sin título";
+    // TÍTULO FINAL (MAL EN > AniList EN > AniList Romaji > Native)
+let title = null;
 
-        let imageUrl = ani.image ||
-                       mal?.images?.jpg?.large_image_url ||
-                       'https://via.placeholder.com/300x450?text=Sin+Imagen';
+// 1️⃣ MAL inglés
+if (mal?.title_english && mal.title_english.trim() !== '') {
+    title = mal.title_english.trim();
+}
+// 2️⃣ MAL fallback (romaji/japonés)
+else if (mal?.title && mal.title.trim() !== '') {
+    title = mal.title.trim();
+}
+// 3️⃣ AniList inglés
+else if (ani.titles?.english) {
+    title = ani.titles.english;
+}
+// 4️⃣ AniList romaji
+else if (ani.titles?.romaji) {
+    title = ani.titles.romaji;
+}
+// 5️⃣ AniList native
+else if (ani.titles?.native) {
+    title = ani.titles.native;
+}
+// 6️⃣ último recurso
+else {
+    title = "Sin título";
+}
 
-        return {
-            mal_id: ani.mal_id,
-            title: title.trim(),
-            image: imageUrl,
-            mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-            al: ani.score ? ani.score.toFixed(2) : null,
-            al_id: ani.al_id,
-            type: ani.format || 'Unknown'
-        };
-    });
+    // IMAGEN: AniList rey, MAL backup
+    let imageUrl = ani.image ||
+                   (mal?.images?.jpg?.large_image_url ||
+                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
+
+    return {
+        mal_id: ani.mal_id,
+        title: title.trim() || "Sin título",
+        image: imageUrl,
+        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
+        al: ani.score ? ani.score.toFixed(2) : null,
+        al_id: ani.al_id,
+        type: ani.format || 'Unknown'
+    };
+});
+    // ──────────────────────────────
 
     clearInterval(fakeInterval);
     updateProgress(90);
 
-    // Procesar promedios
+    // Aquí sigue tu código original de alData (si lo mantenés)
+    // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
+
     const processed = enrichedList.map(ani => {
-        const malNum = ani.mal != null ? ani.mal : null;
-        const alNum = ani.al ?? parseFloat(getManualScore(ani.mal_id)) || null;
+    const malScoreRaw = ani.mal ?? null;
+    let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
 
-        let avgNum = 0;
-        let count = 0;
-        if (malNum != null) { avgNum += malNum; count++; }
-        if (alNum != null) { avgNum += alNum; count++; }
-        const avg = count > 0 ? (avgNum / count).toFixed(2) : 'N/A';
+    // Si no hay manual y no hay MAL → usar AniList (ya debería venir)
+    if (alScoreRaw == null && ani.al != null) {
+        alScoreRaw = ani.al;
+    }
 
-        return {
-            title: ani.title || "Sin título",
-            image: ani.image,
-            mal: malNum?.toFixed(2) ?? 'N/A',
-            al: alNum?.toFixed(2) ?? 'N/A',
-            avg,
-            mal_id: ani.mal_id,
-            al_id: ani.al_id
-        };
-    });
+    // Números seguros (evitar NaN)
+    const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
+    const alNum = alScoreRaw != null && !isNaN(alScoreRaw) ? parseFloat(alScoreRaw) : null;
 
-    // Ordenar y guardar
-    fullRanking = processed.sort((a, b) => {
-        const avgA = parseFloat(a.avg) || 0;
-        const avgB = parseFloat(b.avg) || 0;
-        if (avgB !== avgA) return avgB - avgA;
-        return a.title.localeCompare(b.title);
-    });
+    // Promedio
+    let avgNum = 0;
+    let sourcesCount = 0;
+    if (malNum != null) { avgNum += malNum; sourcesCount++; }
+    if (alNum != null) { avgNum += alNum; sourcesCount++; }
+    if (sourcesCount > 0) avgNum /= sourcesCount;
 
-    saveSeasonCache(key, fullRanking);
+    // Imagen FINAL: AniList es rey
+    let finalImage = ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen';
 
-    // Renderizar
-    currentPage = 1;
-    renderPage();
+    return {
+        title: ani.title || "Sin título",  // ya viene de AniList
+        image: finalImage,
+        mal: malNum != null ? malNum.toFixed(2) : 'N/A',
+        al: alNum != null ? alNum.toFixed(2) : 'N/A',
+        avg: avgNum.toFixed(2),
+        sources: sourcesCount,
+        mal_id: ani.mal_id,
+        al_id: ani.al_id
+    };
+});
+    // El resto sigue igual: sort, slice(0,10), render, cache, etc.
+    top10 = processed.sort((a, b) => {
+    if (b.avg !== a.avg) return b.avg - a.avg;
+    const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
+    const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
+    if (maxB !== maxA) return maxB - maxA;
+    return a.title.localeCompare(b.title);
+}).slice(0, 10);
+
+    grid.innerHTML = '';
+    top10.forEach((anime, i) => renderCard(anime, i));
+
+    saveSeasonCache(key, top10);
 
     startCountdown();
     loading.textContent = '';
     updateProgress(100);
-    setTimeout(() => progressContainer.style.display = 'none', 300);
-}
-// Renderiza SOLO la página actual
-function renderPage() {
-    grid.innerHTML = '';
-
-    const totalItems = fullRanking.length;
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1; // ← Evita división por 0
-
-    // Si no hay animes, mostramos mensaje
-    if (totalItems === 0) {
-        grid.innerHTML = '<div style="font-size: 1.5em; color: #ff6666; padding: 40px;">No se encontraron animes para esta temporada con los filtros seleccionados.</div>';
-        document.getElementById('pageInfo').textContent = 'Página 1 de 1 (0 animes)';
-        document.getElementById('prevPage').disabled = true;
-        document.getElementById('nextPage').disabled = true;
-        return;
-    }
-
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    const end = Math.min(start + ITEMS_PER_PAGE, totalItems);
-    const pageItems = fullRanking.slice(start, end);
-
-    pageItems.forEach((anime, idx) => {
-        const globalIndex = start + idx;
-        renderCard(anime, globalIndex);
-    });
-
-    document.getElementById('pageInfo').textContent = 
-        `Página ${currentPage} de ${totalPages} (${totalItems} animes)`;
-
-    const prevBtn = document.getElementById('prevPage');
-    const nextBtn = document.getElementById('nextPage');
-
-    prevBtn.disabled = currentPage === 1;
-    nextBtn.disabled = currentPage >= totalPages;
-}
-
-// Cambia de página
-function changePage(delta) {
-    currentPage += delta;
-    if (currentPage < 1) currentPage = 1;
-    if (currentPage > Math.ceil(fullRanking.length / ITEMS_PER_PAGE)) {
-        currentPage = Math.ceil(fullRanking.length / ITEMS_PER_PAGE);
-    }
-    renderPage();
+    setTimeout(() => {
+        progressContainer.style.display = 'none';
+    }, 300);
 }
 // Retorna milisegundos restantes hasta que expire el caché de esta temporada
 function getTimeUntilNextUpdate(year, season) {
@@ -1083,5 +1070,5 @@ function getSelectedTypes() {
 }
 
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9c30e57fddaff3fe',t:'MTc2OTI3MjAzOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
