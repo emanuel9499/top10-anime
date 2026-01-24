@@ -228,6 +228,9 @@ frames pulse {
     border-color: #ff4444;
     box-shadow: 0 0 8px rgba(204,0,0,0.4);
 }
+#prevPage, #nextPage {
+    margin-top: 15px; /* coincide con botón Buscar */
+}
 
 </style>
 </head>
@@ -277,13 +280,14 @@ frames pulse {
 
 
 <!-- Navegación sobre el grid -->
-<div id="gridContainer" style="position: relative; max-width: 1400px; margin: 0 auto;">
+<div id="gridContainer" style="position: relative; max-width: 1400px; margin: 20px auto; display: flex; align-items: flex-start;">
     <button id="prevPage" style="
-        position: absolute; top: 40%; left: -40px; font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer;">&#8592;</button>
-    <div id="grid" class="grid"></div>
+        font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer; margin-right: 10px;">&#8592;</button>
+    <div id="grid" class="grid" style="flex: 1;"></div>
     <button id="nextPage" style="
-        position: absolute; top: 40%; right: -40px; font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer;">&#8594;</button>
+        font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer; margin-left: 10px;">&#8594;</button>
 </div>
+
 
 
 <script>
@@ -809,8 +813,7 @@ function saveMalCache(id, data) {
 // Solo enriquecemos los primeros 15 (los de más score) para no abusar
 const malIdsToFetch = aniList
     .filter(a => a.mal_id)
-    .map(a => a.mal_id)
-    .slice(0, 15);  // ← clave: límite bajo
+    .map(a => a.mal_id);
 
 for (const id of malIdsToFetch) {
     let malData = getMalCache(id);
