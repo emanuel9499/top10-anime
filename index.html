@@ -799,39 +799,20 @@ function saveMalCache(id, data) {
 const malIdsToFetch = aniList
     .filter(a => a.mal_id)
     .map(a => a.mal_id)
+
+    const BATCH_SIZE = 5;
+const DELAY_MS = 2000;
+
+for (let i = 0; i < malIdsToFetch.length; i += BATCH_SIZE) {
+    const batch = malIdsToFetch.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(id => fetchMalFull(id)));
+    batch.forEach((id, idx) => { if (results[idx]) malDataById[id] = results[idx]; });
+    await delay(DELAY_MS);
+}
+
     
 
-for (const id of malIdsToFetch) {
-    let malData = getMalCache(id);
 
-    if (!malData) {
-        let attempts = 0;
-        while (attempts < 3) {
-            try {
-                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
-                if (res.status === 429) {
-                    console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
-                    await delay(5000 * (attempts + 1));  // backoff exponencial
-                    attempts++;
-                    continue;
-                }
-                if (res.ok) {
-                    const data = await res.json();
-                    malData = data.data;
-                    saveMalCache(id, malData);
-                    break;
-                }
-            } catch (e) {
-                console.error("Error fetching MAL for", id, e);
-                break;
-            }
-            attempts++;
-            await delay(1500);  // delay normal 1.5s
-        }
-    }
-
-    if (malData) malDataById[id] = malData;
-}
 
     updateProgress(60);
 
@@ -1180,6 +1161,22 @@ function updatePageButtons() {
     if (window.innerWidth <= 768) {
         gridWrapper.classList.toggle('has-prev', currentPage > 1);
         gridWrapper.classList.toggle('has-next', currentPage * itemsPerPage < seasonRanking.length);
+    }
+}
+async function fetchMalFull(id) {
+    let malData = getMalCache(id);
+    if (malData) return malData;
+
+    try {
+        const res = await fetch(`https://api.jikan.moe/v4/anime/${id}?fields=title,score,images`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        malData = data.data;
+        saveMalCache(id, malData);
+        return malData;
+    } catch(e) {
+        console.error("Error fetching MAL for", id, e);
+        return null;
     }
 }
 
