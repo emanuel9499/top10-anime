@@ -743,7 +743,27 @@ function editAlScore(malId, element) {
     element.appendChild(input);
     input.focus();
 }
+// ────────────────────────────────────────────────
+// Funciones de caché para MAL (necesarias para loadTop10)
+// ────────────────────────────────────────────────
 
+function getMalCache(id) {
+    const raw = localStorage.getItem(`MAL_FULL_${id}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+        localStorage.removeItem(`MAL_FULL_${id}`);
+        return null;
+    }
+    return parsed.data;
+}
+
+function saveMalCache(id, data) {
+    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
+        timestamp: Date.now(),
+        data
+    }));
+}
 async function loadTop10() {
     const year = parseInt(document.getElementById('year').value);
     const season = document.getElementById('season').value;
