@@ -693,17 +693,44 @@ const avg = count === 2 ? (avgNum / 2).toFixed(2) :
     grid.appendChild(card);
 }
 
-function renderPage(page) {
+async function renderPage(page) {
     if (!seasonRanking.length) return;
+
     const start = (page - 1) * itemsPerPage;
     const end = start + itemsPerPage;
     const pageItems = seasonRanking.slice(start, end);
 
     grid.innerHTML = '';
-    pageItems.forEach((anime, i) => renderCard(anime, start + i));
+
+    // Recorremos los animes de la página
+    for (let i = 0; i < pageItems.length; i++) {
+        const anime = pageItems[i];
+
+        // Si mal score no existe pero tenemos mal_id → lazy fetch
+        if (anime.mal === null && anime.mal_id) {
+            // Render skeleton mientras llega el score
+            const skeletonCard = document.createElement('div');
+            skeletonCard.className = 'skeleton';
+            grid.appendChild(skeletonCard);
+
+            // Fetch MAL
+            fetchMalFull(anime.mal_id).then(malData => {
+                if (malData) {
+                    anime.mal = malData.score ? parseFloat(malData.score.toFixed(2)) : null;
+                    anime.title = anime.title || malData.title_english || malData.title || anime.title; // fallback
+                    anime.image = anime.image || malData.images?.jpg?.large_image_url || anime.image;
+                }
+                // Re-renderizamos la página para actualizar scores
+                renderPage(page);
+            }).catch(e => console.error("Error fetch MAL lazy", anime.mal_id, e));
+        } else {
+            renderCard(anime, start + i);
+        }
+    }
 
     updatePageButtons();
 }
+
 
 // Función global para editar score
 function editAlScore(malId, element) {
@@ -776,22 +803,6 @@ updateProgress(30);
 
 // Obtener datos de MAL con cache, retry y límite para evitar 429
 const malDataById = {};
-
-
-// TODOS los animes de la temporada con MAL ID
-const malIdsToFetch = aniList.filter(a => a.mal_id).map(a => a.mal_id);
-
-
-const BATCH_SIZE = 5;
-const DELAY_MS = 2000;
-
-for (let i = 0; i < malIdsToFetch.length; i += BATCH_SIZE) {
-    const batch = malIdsToFetch.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(batch.map(id => fetchMalFull(id)));
-    batch.forEach((id, idx) => { if (results[idx]) malDataById[id] = results[idx]; });
-    await delay(DELAY_MS);
-}
-
 
   
 
