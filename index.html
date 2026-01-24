@@ -796,34 +796,26 @@ async function loadTop10() {
         }, 300);
 
         const aniList = await fetchSeasonFromAniList(year, season);
-        updateProgress(30);
+        // Después de: const aniList = await fetchSeasonFromAniList(year, season);
 
-        // ── INICIO PATCH: fetch de MAL para todos ──
-for (let ani of aniList) {
-    if (ani.mal_id) {
-        const malData = await fetchMalFull(ani.mal_id); // fetch con cache
-        if (malData) {
-            ani.mal = malData.score ? parseFloat(malData.score.toFixed(2)) : null;
-            ani.title = ani.title || malData.title_english || malData.title;
-            ani.image = ani.image || malData.images?.jpg?.large_image_url || ani.image;
-        }
-    }
-}
-// ── FIN PATCH ──
-
-
-    // Obtener datos completos de MAL para los que tengan idMal
-    const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
-    // Obtener datos completos de MAL para los que tengan idMal (con cache)
 updateProgress(30);
 
-// Obtener datos de MAL con cache, retry y límite para evitar 429
-const malDataById = {};
+// ── Obtener TODOS los datos de MAL en paralelo con control de rate ──
+const malPromises = aniList
+    .filter(ani => ani.mal_id)           // solo los que tienen MAL ID
+    .map(async (ani) => {
+        const malData = await fetchMalFull(ani.mal_id);
+        if (malData) {
+            ani.mal = malData.score ? parseFloat(malData.score.toFixed(2)) : null;
+            ani.title = ani.title || malData.title_english || malData.title || ani.title;
+            ani.image = ani.image || malData.images?.jpg?.large_image_url || ani.image;
+        }
+        return ani;
+    });
 
-  
+await Promise.all(malPromises);   // Esperamos TODOS los fetches
 
-
-    updateProgress(60);
+updateProgress(60);
 
     // Combinar: AniList como base, enriquecer con MAL donde exista
    const enrichedList = aniList.map(ani => {
@@ -1163,17 +1155,27 @@ async function fetchMalFull(id) {
     let malData = getMalCache(id);
     if (malData) return malData;
 
-    try {
-        const res = await fetch(`https://api.jikan.moe/v4/anime/${id}?fields=title,score,images`);
-        if (!res.ok) return null;
-        const data = await res.json();
-        malData = data.data;
-        saveMalCache(id, malData);
-        return malData;
-    } catch(e) {
-        console.error("Error fetching MAL for", id, e);
-        return null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const res = await fetch(`https://api.jikan.moe/v4/anime/${id}?fields=title,score,images`);
+            if (res.status === 429) { // rate limit
+                console.warn(`Rate limit MAL - esperando 4s (intento ${attempt})`);
+                await delay(4000);
+                continue;
+            }
+            if (!res.ok) throw new Error(`MAL status ${res.status}`);
+            
+            const data = await res.json();
+            malData = data.data;
+            saveMalCache(id, malData);
+            return malData;
+        } catch (e) {
+            console.error(`Error fetching MAL ${id} (intento ${attempt})`, e);
+            if (attempt === 3) return null;
+            await delay(2000 * attempt); // backoff
+        }
     }
+    return null;
 }
 
 // Cache en localStorage (persiste entre recargas)
