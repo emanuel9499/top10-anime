@@ -296,9 +296,8 @@ frames pulse {
 <div id="grid" class="grid"></div>
 
 <!-- Botones de navegación -->
-<div class="pagination" style="display:flex; justify-content:center; align-items:center; gap:15px; flex-wrap: wrap; margin-top: 15px;">
+<div class="pagination" style="display:flex; justify-content:center; align-items:center; gap:15px; margin-top: 15px;">
     <button id="prevPage">Anterior</button>
-    <button onclick="loadTop10()">Buscar</button>
     <button id="nextPage">Siguiente</button>
 </div>
 
@@ -954,14 +953,18 @@ else {
         al_id: ani.al_id
     };
 });
-    // El resto sigue igual: sort, slice(0,10), render, cache, etc.
-    seasonRanking = processed.sort((a, b) => {
-    if (b.avg !== a.avg) return b.avg - a.avg;
-    const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
-    const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
-    if (maxB !== maxA) return maxB - maxA;
-    return a.title.localeCompare(b.title);
-});
+   
+    // Filtrar animes que tienen N/A en ambas puntuaciones
+seasonRanking = processed
+    .filter(a => a.mal !== 'N/A' || a.al !== 'N/A')
+    .sort((a, b) => {
+        if (b.avg !== a.avg) return b.avg - a.avg;
+        const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
+        const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
+        if (maxB !== maxA) return maxB - maxA;
+        return a.title.localeCompare(b.title);
+    });
+
 
 currentPage = 1;
 renderPage(currentPage);
