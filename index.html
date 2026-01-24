@@ -313,7 +313,7 @@ window.onload = () => {
             if (year && season) {
                 localStorage.removeItem(seasonKey(year, season));
             }
-            loadTop10();           // recarga automática al cambiar tipo
+           
         });
     });
     // ────────────────────────────────────────────────
@@ -461,13 +461,11 @@ async function fetchSeasonFromAniList(year, season) {
     // Mapear a formato compatible con tu código actual (para que renderCard y scores funcionen)
     return allMedia.slice(0, 40).map(m => ({
         mal_id: m.idMal || null,
-        title: m.title.english || m.title.romaji || "Sin título",
-        title_english: m.title.english,
-        images: { jpg: { large_image_url: m.coverImage?.large || '' } },
-        score: m.averageScore ? (m.averageScore / 10) : null, // temporal, se sobreescribe con MAL después
-        type: m.format,
-        episodes: m.episodes,
-        al_id: m.id,
+    title: m.title.english || m.title.romaji || "Sin título",
+    image: m.coverImage?.large || '',
+    score: m.averageScore ? (m.averageScore / 10) : null,  // ← score de AniList
+    type: m.format,
+    al_id: m.id,
         // Placeholder para score MAL (se llenará después)
         mal_score_placeholder: null
     }));
@@ -720,22 +718,27 @@ async function loadTop10() {
     // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
 
     const processed = enrichedList.map(ani => {
-        const malScore = ani.mal ?? null;  // ya viene enriquecido de MAL
-        let alScore = ani.al ?? getManualScore(ani.mal_id);
+    const malScore = ani.mal ?? null;  // score de MAL (enriquecido)
+    let alScore = ani.al ?? getManualScore(ani.mal_id);  // si editaste manual
 
-        const avg = alScore ? (parseFloat(malScore || 0) + parseFloat(alScore)) / 2 : parseFloat(malScore || 0);
+    // Si no hay score manual ni MAL, fallback al score de AniList
+    if (!alScore && ani.score) {
+        alScore = ani.score.toFixed(2);
+    }
 
-        return {
-            title: ani.title,
-            image: ani.image,
-            mal: malScore?.toFixed(2) ?? 'N/A',
-            al: alScore,
-            avg: avg.toFixed(2),
-            sources: alScore ? 2 : (malScore ? 1 : 0),
-            mal_id: ani.mal_id,
-            al_id: ani.al_id
-        };
-    });
+    const avg = alScore ? (parseFloat(malScore || 0) + parseFloat(alScore)) / 2 : parseFloat(malScore || 0);
+
+    return {
+        title: ani.title,
+        image: ani.image,
+        mal: malScore?.toFixed(2) ?? 'N/A',
+        al: alScore ?? 'N/A',
+        avg: avg.toFixed(2),
+        sources: alScore ? 2 : (malScore ? 1 : 0),
+        mal_id: ani.mal_id,
+        al_id: ani.al_id
+    };
+});
 
     // El resto sigue igual: sort, slice(0,10), render, cache, etc.
     top10 = processed.sort(/* tu lógica de sort actual */).slice(0, 10);
