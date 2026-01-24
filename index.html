@@ -748,15 +748,21 @@ for (const id of malIdsToFetch) {
     let imageUrl = '';
     if (mal?.images?.jpg?.large_image_url) {
         imageUrl = mal.images.jpg.large_image_url;
-    } else if (ani.coverImage?.large) {
-        imageUrl = ani.coverImage.large;
-    } else {
+    } else if (ani.image) {
+    imageUrl = ani.image; // ← imagen de AniList
+}
+ else {
         imageUrl = 'https://via.placeholder.com/300x450?text=No+Image';  // fallback bonito
     }
 
     return {
         mal_id: ani.mal_id,
-        title: mal?.title_english || mal?.title || ani.title?.english || ani.title?.romaji || "Sin título",
+        title:
+    mal?.title_english ||
+    mal?.title ||
+    ani.title ||           // ← ya es string desde AniList
+    "Título no disponible",
+
         image: imageUrl,
         mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
         al: ani.score ? ani.score.toFixed(2) : null,  // score de AniList
