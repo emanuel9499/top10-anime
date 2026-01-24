@@ -250,7 +250,7 @@ frames pulse {
     <div style="display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; margin: 15px auto;">
         <div class="type-filters" style="font-size: 1.1em; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
             <label><input type="checkbox" id="type-tv" checked disabled> TV</label>
-            <label><input type="checkbox" id="type-ona" checked> ONA</label>
+            <label><input type="checkbox" id="type-ona"> ONA</label>
             <label><input type="checkbox" id="type-movie"> Movie</label>
             <label><input type="checkbox" id="type-ova"> OVA</label>
             <label><input type="checkbox" id="type-special"> Special</label>
@@ -675,22 +675,67 @@ async function loadTop10() {
 
     // Obtener datos completos de MAL para los que tengan idMal
     const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
-    const malDataById = {};
+    // Obtener datos completos de MAL para los que tengan idMal (con cache)
+const malDataById = {};
 
-    if (malIds.length > 0) {
-        for (const id of malIds) {
+// Cache simple en localStorage (persiste entre recargas)
+function getMalCache(id) {
+    const raw = localStorage.getItem(`MAL_FULL_${id}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) { // mismo TTL que las temporadas
+        localStorage.removeItem(`MAL_FULL_${id}`);
+        return null;
+    }
+    return parsed.data;
+}
+
+function saveMalCache(id, data) {
+    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
+        timestamp: Date.now(),
+        data
+    }));
+}
+
+// Limitamos a los primeros 20 para no abusar rate limit
+const malIdsToFetch = aniList
+    .filter(a => a.mal_id)
+    .map(a => a.mal_id)
+    .slice(0, 20);  // ← ajustá este número si querés más/menos
+
+for (const id of malIdsToFetch) {
+    let malData = getMalCache(id);
+
+    if (!malData) {
+        let attempts = 0;
+        while (attempts < 3) {  // reintentos en caso de 429
             try {
                 const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                if (res.status === 429) {
+                    console.warn(`429 en MAL ID ${id} → esperando...`);
+                    await delay(5000 * (attempts + 1));  // backoff: 5s, 10s, 15s
+                    attempts++;
+                    continue;
+                }
                 if (res.ok) {
                     const data = await res.json();
-                    malDataById[id] = data.data;
+                    malData = data.data;
+                    saveMalCache(id, malData);
+                    break;
                 }
-                await delay(400);
             } catch (e) {
                 console.error("Error fetching MAL full for", id, e);
+                break;
             }
+            attempts++;
+            await delay(1200);  // delay normal entre requests
         }
     }
+
+    if (malData) {
+        malDataById[id] = malData;
+    }
+}
 
     updateProgress(60);
 
@@ -698,14 +743,22 @@ async function loadTop10() {
     const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
+    // Imagen: priorizar MAL si existe, fallback a AniList coverImage
+    let imageUrl = '';
+    if (mal?.images?.jpg?.large_image_url) {
+        imageUrl = mal.images.jpg.large_image_url;
+    } else if (ani.coverImage?.large) {
+        imageUrl = ani.coverImage.large;
+    }
+
     return {
         mal_id: ani.mal_id,
-        title: mal?.title_english || mal?.title || ani.title,
-        image: mal?.images?.jpg?.large_image_url || ani.image,
+        title: mal?.title_english || mal?.title || ani.title?.english || ani.title?.romaji || "Sin título",
+        image: imageUrl,
         mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-        al: ani.score ? ani.score.toFixed(2) : null,  // ← score de AniList
+        al: ani.score ? ani.score.toFixed(2) : null,
         al_id: ani.al_id,
-        type: ani.type
+        type: ani.type || ani.format || 'Unknown'
     };
 });
     // ──────────────────────────────
