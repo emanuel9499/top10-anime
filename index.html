@@ -231,6 +231,19 @@ frames pulse {
 #prevPage, #nextPage {
     margin-top: 15px; /* coincide con botón Buscar */
 }
+.pagination button {
+    font-size: 1.1em; 
+    background: linear-gradient(45deg,#cc0000,#ff3333); 
+    border: 2px solid #cc0000; 
+    border-radius: 8px; 
+    color: #fff; 
+    cursor: pointer; 
+    padding: 10px 18px;
+    transition: transform .2s;
+}
+.pagination button:hover {
+    transform: scale(1.05);
+}
 
 </style>
 </head>
@@ -253,10 +266,10 @@ frames pulse {
     <div style="display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; margin: 15px auto;">
         <div class="type-filters" style="font-size: 1.1em; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
             <label><input type="checkbox" id="type-tv" checked disabled> TV</label>
-            <label><input type="checkbox" id="type-ona"> ONA</label>
-            <label><input type="checkbox" id="type-movie"> Movie</label>
-            <label><input type="checkbox" id="type-ova"> OVA</label>
-            <label><input type="checkbox" id="type-special"> Special</label>
+            <label><input type="checkbox" id="type-ona" checked> ONA</label>
+            <label><input type="checkbox" id="type-movie" checked> Movie</label>
+            <label><input type="checkbox" id="type-ova" checked> OVA</label>
+            <label><input type="checkbox" id="type-special" checked> Special</label>
         </div>
 
         <!-- Dropdown al lado -->
@@ -279,14 +292,16 @@ frames pulse {
 </div>
 
 
-<!-- Navegación sobre el grid -->
-<div id="gridContainer" style="position: relative; max-width: 1400px; margin: 20px auto; display: flex; align-items: flex-start;">
-    <button id="prevPage" style="
-        font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer; margin-right: 10px;">&#8592;</button>
-    <div id="grid" class="grid" style="flex: 1;"></div>
-    <button id="nextPage" style="
-        font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer; margin-left: 10px;">&#8594;</button>
+<!-- Contenedor del grid -->
+<div id="grid" class="grid"></div>
+
+<!-- Botones de navegación -->
+<div class="pagination" style="display:flex; justify-content:center; align-items:center; gap:15px; flex-wrap: wrap; margin-top: 15px;">
+    <button id="prevPage">Anterior</button>
+    <button onclick="loadTop10()">Buscar</button>
+    <button id="nextPage">Siguiente</button>
 </div>
+
 
 
 
@@ -524,7 +539,7 @@ query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: I
     allMedia.sort((a, b) => (b.averageScore || 0) - (a.averageScore || 0));
 
     // Mapear a formato compatible con tu código actual (para que renderCard y scores funcionen)
-    return allMedia.slice(0, 40).map(m => ({
+    return allMedia.map(m => ({
     mal_id: m.idMal || null,
     titles: {
         english: m.title?.english ?? null,
@@ -537,6 +552,7 @@ query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: I
     episodes: m.episodes,
     al_id: m.id
 }));
+
 
 }
 
