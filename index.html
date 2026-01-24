@@ -936,19 +936,18 @@ else {
     };
 });
     // El resto sigue igual: sort, slice(0,10), render, cache, etc.
-    seasonRanking = processed.sort((a, b) => {
+    top10 = processed.sort((a, b) => {
     if (b.avg !== a.avg) return b.avg - a.avg;
     const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
     const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
     if (maxB !== maxA) return maxB - maxA;
     return a.title.localeCompare(b.title);
-});
+}).slice(0, 10);
 
-currentPage = 1;
-renderPage(currentPage);
+    grid.innerHTML = '';
+    top10.forEach((anime, i) => renderCard(anime, i));
 
-saveSeasonCache(key, seasonRanking);
-
+    saveSeasonCache(key, top10);
 
     startCountdown();
     loading.textContent = '';
