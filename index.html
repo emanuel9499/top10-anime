@@ -312,6 +312,8 @@ const progressText = document.getElementById('progressText');
 let seasonRanking = []; // Lista completa de la temporada
 let currentPage = 1;
 const itemsPerPage = 10;
+let isLoading = false;
+let currentLoadPromise = null; // Para poder abortar/cancelar
 
 
 window.onload = () => {
@@ -385,8 +387,6 @@ window.onload = () => {
         });
     });
 
-    // Cargar los top 10 automáticamente al abrir la página
-    loadTop10();
 };
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -764,212 +764,236 @@ function saveMalCache(id, data) {
         data
     }));
 }
+// Variables globales necesarias (agregar al inicio del <script> si no las tenés)
+let isLoading = false;
+let currentLoadPromise = null;
+
+// ────────────────────────────────────────────────
+// loadTop10() COMPLETA - Versión corregida y robusta
+// ────────────────────────────────────────────────
 async function loadTop10() {
-    const year = parseInt(document.getElementById('year').value);
-    const season = document.getElementById('season').value;
-    if (!year || !season) return;
-
-    const key = seasonKey(year, season);
-    let seasonData = getSeasonCache(key);
-
-    loading.textContent = seasonData ? 'Cargado desde caché...' : 'Cargando temporada...';
-    progressContainer.style.display = 'block';
-    updateProgress(0, 'Iniciando...');
-
-    if (!seasonData) {
-        renderSkeletons();
-
-        // ──────────────────────
-        // Etapa 1: Cargar datos de AniList (rápida) → 0% → 30%
-        // ──────────────────────
-        updateProgress(5, 'Consultando AniList...');
-        const aniList = await fetchSeasonFromAniList(year, season);
-        updateProgress(30, 'Datos de AniList obtenidos');
-
-        // ──────────────────────
-// Etapa 2: Enriquecer con datos de MAL → 30% → 85%
-// ──────────────────────
-updateProgress(35, 'Obteniendo datos de MyAnimeList...');
-
-const malIdsToFetch = aniList
-    .filter(a => a.mal_id)
-    .map(a => a.mal_id);
-
-const totalMal = malIdsToFetch.length;
-let processedMal = 0;
-
-const malDataById = {};
-
-// Si no hay nada para fetchear, saltamos directo
-if (totalMal === 0) {
-    updateProgress(85, 'No hay datos de MAL para enriquecer');
-} else {
-    for (const id of malIdsToFetch) {
-        let malData = getMalCache(id);
-
-        if (!malData) {
-            let attempts = 0;
-            while (attempts < 3) {
-                try {
-                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
-                    
-                    if (res.status === 429) {
-                        console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
-                        await delay(5000 * (attempts + 1));
-                        attempts++;
-                        continue;
-                    }
-                    
-                    if (res.ok) {
-                        const data = await res.json();
-                        malData = data.data;
-                        saveMalCache(id, malData);
-                        
-                        // ←─ CLAVE: 1 request por segundo
-                        await delay(1000);  // Espera 1 segundo después de éxito
-                        break;
-                    }
-                    
-                    // Si no es 200 ni 429 → error genérico
-                    console.warn(`Error ${res.status} en MAL ID ${id}`);
-                    await delay(1000);
-                    break;
-                } catch (e) {
-                    console.error("Error fetching MAL for", id, e);
-                    await delay(1000);
-                    break;
-                }
-                attempts++;
-                await delay(1500); // delay entre reintentos
-            }
-        }
-
-        if (malData) malDataById[id] = malData;
-
-        // Actualizar progreso
-        processedMal++;
-        const malProgress = 30 + (55 * (processedMal / totalMal)); // 30% → 85%
-        updateProgress(Math.min(85, malProgress), `Procesando MAL (${processedMal}/${totalMal})`);
+    // Si ya hay una carga en curso, marcamos para interrumpirla
+    if (isLoading) {
+        console.log("Carga en curso detectada → interrumpiendo la anterior");
+        isLoading = false; // La anterior dejará de actualizar el DOM
     }
-}
 
-        updateProgress(85, 'Datos de MAL completados');
+    isLoading = true;
 
-        // ──────────────────────
-        // Etapa 3: Procesar, combinar y ordenar → 85% → 98%
-        // ──────────────────────
-        updateProgress(86, 'Combinando y ordenando ranking...');
+    // Guardamos la promesa para poder referenciarla si se cancela
+    currentLoadPromise = (async () => {
+        try {
+            const year = parseInt(document.getElementById('year').value);
+            const season = document.getElementById('season').value;
+            if (!year || !season) {
+                loading.textContent = "Seleccioná temporada y año";
+                return;
+            }
 
-        // Combinar: AniList como base, enriquecer con MAL donde exista
-        const enrichedList = aniList.map(ani => {
-            const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+            const key = seasonKey(year, season);
+            let seasonData = getSeasonCache(key);
 
-            // TÍTULO FINAL (prioridad: MAL EN > MAL JP > AL EN > AL Romaji > Native)
-            let title = null;
-            if (mal?.title_english && mal.title_english.trim() !== '') {
-                title = mal.title_english.trim();
-            } else if (mal?.title && mal.title.trim() !== '') {
-                title = mal.title.trim();
-            } else if (ani.titles?.english) {
-                title = ani.titles.english;
-            } else if (ani.titles?.romaji) {
-                title = ani.titles.romaji;
-            } else if (ani.titles?.native) {
-                title = ani.titles.native;
+            loading.textContent = seasonData ? 'Cargado desde caché...' : 'Cargando temporada...';
+            progressContainer.style.display = 'block';
+            updateProgress(0, 'Iniciando...');
+
+            if (!seasonData) {
+                renderSkeletons();
+
+                // Etapa 1: AniList → 0% a 30%
+                updateProgress(5, 'Consultando AniList...');
+                const aniList = await fetchSeasonFromAniList(year, season);
+                if (!isLoading) return; // ← Interrumpimos si se canceló
+                updateProgress(30, 'Datos de AniList obtenidos');
+
+                // Etapa 2: Enriquecer con MAL → 30% a 85%
+                updateProgress(35, 'Obteniendo datos de MyAnimeList...');
+
+                // ── SIEMPRE TODOS LOS TIPOS ── (ignoramos checkboxes)
+                const malIdsToFetch = aniList
+                    .filter(a => a.mal_id)
+                    .map(a => a.mal_id);
+
+                const totalMal = malIdsToFetch.length;
+                let processedMal = 0;
+                const malDataById = {};
+
+                if (totalMal === 0) {
+                    updateProgress(85, 'No hay datos de MAL para enriquecer');
+                } else {
+                    for (const id of malIdsToFetch) {
+                        if (!isLoading) break; // ← Cancelamos si se inició otra carga
+
+                        let malData = getMalCache(id);
+
+                        if (!malData) {
+                            let attempts = 0;
+                            while (attempts < 3) {
+                                try {
+                                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                                    
+                                    if (res.status === 429) {
+                                        console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
+                                        await delay(5000 * (attempts + 1));
+                                        attempts++;
+                                        continue;
+                                    }
+                                    
+                                    if (res.ok) {
+                                        const data = await res.json();
+                                        malData = data.data;
+                                        saveMalCache(id, malData);
+                                        await delay(1000); // ← 1 request por segundo
+                                        break;
+                                    }
+                                    
+                                    console.warn(`Error ${res.status} en MAL ID ${id}`);
+                                    break;
+                                } catch (e) {
+                                    console.error("Error fetching MAL for", id, e);
+                                    break;
+                                }
+                                attempts++;
+                                await delay(1500);
+                            }
+                        }
+
+                        if (malData) malDataById[id] = malData;
+
+                        processedMal++;
+                        const malProgress = 30 + (55 * (processedMal / totalMal));
+                        updateProgress(Math.min(85, malProgress), `Procesando MAL (${processedMal}/${totalMal})`);
+                    }
+                }
+
+                if (!isLoading) return;
+
+                updateProgress(85, 'Datos de MAL completados');
+
+                // Etapa 3: Procesar y ordenar → 85% a 98%
+                updateProgress(86, 'Combinando y ordenando ranking...');
+
+                const enrichedList = aniList.map(ani => {
+                    const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+
+                    let title = null;
+                    if (mal?.title_english && mal.title_english.trim() !== '') {
+                        title = mal.title_english.trim();
+                    } else if (mal?.title && mal.title.trim() !== '') {
+                        title = mal.title.trim();
+                    } else if (ani.titles?.english) {
+                        title = ani.titles.english;
+                    } else if (ani.titles?.romaji) {
+                        title = ani.titles.romaji;
+                    } else if (ani.titles?.native) {
+                        title = ani.titles.native;
+                    } else {
+                        title = "Sin título";
+                    }
+
+                    let imageUrl = ani.image ||
+                                   (mal?.images?.jpg?.large_image_url ||
+                                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
+
+                    return {
+                        mal_id: ani.mal_id,
+                        title: title.trim() || "Sin título",
+                        image: imageUrl,
+                        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
+                        al: ani.score ? ani.score.toFixed(2) : null,
+                        al_id: ani.al_id,
+                        type: ani.format || 'Unknown'
+                    };
+                });
+
+                updateProgress(90, 'Calculando promedios...');
+
+                const processed = enrichedList
+                    .map(ani => {
+                        const malScoreRaw = ani.mal ?? null;
+                        let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
+
+                        const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
+                        const alNum  = alScoreRaw  != null && !isNaN(alScoreRaw)  ? parseFloat(alScoreRaw)  : null;
+
+                        if (malNum === null && alNum === null) {
+                            return null;
+                        }
+
+                        let avgNum = 0;
+                        let sourcesCount = 0;
+                        if (malNum != null) { avgNum += malNum; sourcesCount++; }
+                        if (alNum  != null) { avgNum += alNum;  sourcesCount++; }
+                        if (sourcesCount > 0) avgNum /= sourcesCount;
+
+                        return {
+                            title: ani.title || "Sin título",
+                            image: ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen',
+                            mal: malNum != null ? malNum.toFixed(2) : 'N/A',
+                            al: alNum != null ? alNum.toFixed(2) : 'N/A',
+                            avg: avgNum.toFixed(2),
+                            mal_id: ani.mal_id,
+                            al_id: ani.al_id
+                        };
+                    })
+                    .filter(anime => anime !== null);
+
+                updateProgress(94, 'Ordenando ranking final...');
+
+                seasonRanking = processed.sort((a, b) => {
+                    if (b.avg !== a.avg) return b.avg - a.avg;
+                    const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
+                    const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
+                    if (maxB !== maxA) return maxB - maxA;
+                    return a.title.localeCompare(b.title);
+                });
+
+                saveSeasonCache(key, seasonRanking);
+
+                // Sprint final
+                updateProgress(96);
+                await delay(300);
+                updateProgress(98);
+                await delay(250);
+                updateProgress(100, '¡Listo!');
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                    loading.textContent = '';
+                }, 600);
+
             } else {
-                title = "Sin título";
+                // Desde caché
+                seasonRanking = seasonData;
+                updateProgress(40);
+                await delay(200);
+                updateProgress(70, 'Cargando desde caché...');
+                await delay(300);
+                updateProgress(100, '¡Listo!');
+                setTimeout(() => progressContainer.style.display = 'none', 400);
             }
 
-            // IMAGEN: AniList rey, MAL backup
-            let imageUrl = ani.image ||
-                           (mal?.images?.jpg?.large_image_url ||
-                            'https://via.placeholder.com/300x450?text=Sin+Imagen');
+            if (!isLoading) return; // No renderizamos si se canceló
 
-            return {
-                mal_id: ani.mal_id,
-                title: title.trim() || "Sin título",
-                image: imageUrl,
-                mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-                al: ani.score ? ani.score.toFixed(2) : null,
-                al_id: ani.al_id,
-                type: ani.format || 'Unknown'
-            };
-        });
+            // Guardamos la página actual antes de renderizar
+            const pageToRender = currentPage;
 
-        updateProgress(90, 'Calculando promedios...');
+            currentPage = 1;
+            grid.innerHTML = '';
+            renderPage(pageToRender);
+            currentPage = pageToRender;
+            updatePageButtons();
 
-        const processed = enrichedList
-            .map(ani => {
-                const malScoreRaw = ani.mal ?? null;
-                let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
+            startCountdown();
+        } catch (err) {
+            console.error("Error en loadTop10:", err);
+            loading.textContent = 'Error al cargar la temporada';
+        } finally {
+            isLoading = false;
+            currentLoadPromise = null;
+        }
+    })();
 
-                const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
-                const alNum  = alScoreRaw  != null && !isNaN(alScoreRaw)  ? parseFloat(alScoreRaw)  : null;
-
-                // Descartar si NO tiene puntaje ni en MAL ni en AniList (ni manual)
-                if (malNum === null && alNum === null) {
-                    return null;
-                }
-
-                let avgNum = 0;
-                let sourcesCount = 0;
-                if (malNum != null) { avgNum += malNum; sourcesCount++; }
-                if (alNum  != null) { avgNum += alNum;  sourcesCount++; }
-                if (sourcesCount > 0) avgNum /= sourcesCount;
-
-                return {
-                    title: ani.title || "Sin título",
-                    image: ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen',
-                    mal: malNum != null ? malNum.toFixed(2) : 'N/A',
-                    al: alNum != null ? alNum.toFixed(2) : 'N/A',
-                    avg: avgNum.toFixed(2),
-                    mal_id: ani.mal_id,
-                    al_id: ani.al_id
-                };
-            })
-            .filter(anime => anime !== null);
-
-        updateProgress(94, 'Ordenando ranking final...');
-
-        seasonRanking = processed.sort((a, b) => {
-            if (b.avg !== a.avg) return b.avg - a.avg;
-            const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
-            const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
-            if (maxB !== maxA) return maxB - maxA;
-            return a.title.localeCompare(b.title);
-        });
-
-        saveSeasonCache(key, seasonRanking);
-
-        // Pequeño sprint visual final
-        updateProgress(96);
-        await delay(300);
-        updateProgress(98);
-        await delay(250);
-        updateProgress(100, '¡Listo!');
-        setTimeout(() => {
-            progressContainer.style.display = 'none';
-            loading.textContent = '';
-        }, 600);
-
-    } else {
-        // ── Desde caché ──
-        seasonRanking = seasonData;
-        updateProgress(40);
-        await delay(200);
-        updateProgress(70, 'Cargando desde caché...');
-        await delay(300);
-        updateProgress(100, '¡Listo!');
-        setTimeout(() => progressContainer.style.display = 'none', 400);
-    }
-
-    // Siempre renderizamos la página actual
-    currentPage = 1;
-    grid.innerHTML = '';
-    renderPage(currentPage);
-    updatePageButtons();
-
-    startCountdown();
+    return currentLoadPromise;
 }
 // Retorna milisegundos restantes hasta que expire el caché de esta temporada
 function getTimeUntilNextUpdate(year, season) {
@@ -1048,16 +1072,19 @@ if (scoreModeSelect) {
 scoreModeSelect?.addEventListener('change', function() {
     currentScoreMode = this.value;
     localStorage.setItem('scoreMode', currentScoreMode);
-    
-    // Si hay cards cargadas (no skeletons), re-renderizamos desde caché
+
+    // Si hay contenido real cargado → re-renderizamos manteniendo la página actual
     if (grid.children.length > 0 && !grid.querySelector('.skeleton')) {
         const year = parseInt(document.getElementById('year')?.value);
         const season = document.getElementById('season')?.value;
         if (year && season) {
             const cached = getSeasonCache(seasonKey(year, season));
             if (cached) {
+                const oldPage = currentPage; // ← Guardamos la página actual
                 grid.innerHTML = '';
-                cached.forEach((anime, i) => renderCard(anime, i));
+                renderPage(oldPage); // ← Renderizamos la misma página
+                currentPage = oldPage; // Restauramos
+                updatePageButtons();
             }
         }
     }
