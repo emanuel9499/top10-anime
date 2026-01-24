@@ -421,7 +421,26 @@ function cleanupCache() {
         .slice(0, seasons.length - MAX_SEASONS_CACHED)
         .forEach(s => localStorage.removeItem(s.key));
 }
+// Caché local de datos completos de MAL por ID
+function getMalCache(id) {
+    const raw = localStorage.getItem(`MAL_FULL_${id}`);
+    if (!raw) return null;
+    
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+        localStorage.removeItem(`MAL_FULL_${id}`);
+        return null;
+    }
+    
+    return parsed.data;
+}
 
+function saveMalCache(id, data) {
+    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
+        timestamp: Date.now(),
+        data
+    }));
+}
 // Consulta rápida a AniList por un solo MAL ID (ponela ANTES de fetchSeasonMAL)
 async function getAniListSeason(malId) {
     const query = `
