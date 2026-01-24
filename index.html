@@ -525,7 +525,7 @@ async function fetchAniListBatch(malIds) {
             localStorage.setItem(cacheKey, JSON.stringify(result));
             results[media.idMal] = result;
         });
-        await delay(500);
+        await delay(1000);
     }
 
     return results;
