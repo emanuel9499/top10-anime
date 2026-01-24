@@ -793,6 +793,12 @@ function saveMalCache(id, data) {
 // loadTop10() COMPLETA - Versión corregida y robusta
 // ────────────────────────────────────────────────
 async function loadTop10() {
+
+
+	grid.classList.remove('loaded');   // Ocultamos inmediatamente la grilla anterior
+    // Opcional: limpiar skeletons viejos si los tenés
+    grid.innerHTML = '';
+    
     // Si ya hay una carga en curso, marcamos para interrumpirla
     if (isLoading) {
         console.log("Carga en curso detectada → interrumpiendo la anterior");
