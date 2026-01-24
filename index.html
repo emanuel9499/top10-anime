@@ -276,7 +276,15 @@ frames pulse {
 </div>
 
 
-<div id="grid" class="grid"></div>
+<!-- Navegación sobre el grid -->
+<div id="gridContainer" style="position: relative; max-width: 1400px; margin: 0 auto;">
+    <button id="prevPage" style="
+        position: absolute; top: 40%; left: -40px; font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer;">&#8592;</button>
+    <div id="grid" class="grid"></div>
+    <button id="nextPage" style="
+        position: absolute; top: 40%; right: -40px; font-size: 2em; background: none; border: none; color: #cc0000; cursor: pointer;">&#8594;</button>
+</div>
+
 
 <script>
 const CACHE_TTL = 4 * 60 * 60 * 1000;     // 4 horas
@@ -288,6 +296,10 @@ const loading = document.getElementById('loading');
 const progressContainer = document.getElementById('progressContainer');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
+let seasonRanking = []; // Lista completa de la temporada
+let currentPage = 1;
+const itemsPerPage = 10;
+
 
 window.onload = () => {
     const y = document.getElementById('year');
@@ -667,6 +679,36 @@ const avg = count === 2 ? (avgNum / 2).toFixed(2) :
     grid.appendChild(card);
 }
 
+function renderPage(page) {
+    if (!seasonRanking.length) return;
+    const start = (page - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageItems = seasonRanking.slice(start, end);
+
+    grid.innerHTML = '';
+    pageItems.forEach((anime, i) => renderCard(anime, start + i));
+
+    // Ocultar flechas si es primera o última página
+    document.getElementById('prevPage').style.display = page === 1 ? 'none' : 'block';
+    document.getElementById('nextPage').style.display = end >= seasonRanking.length ? 'none' : 'block';
+}
+
+// Eventos de flechas
+document.getElementById('prevPage').addEventListener('click', () => {
+    if (currentPage > 1) {
+        currentPage--;
+        renderPage(currentPage);
+    }
+});
+document.getElementById('nextPage').addEventListener('click', () => {
+    if (currentPage * itemsPerPage < seasonRanking.length) {
+        currentPage++;
+        renderPage(currentPage);
+    }
+});
+
+
+
 // Función global para editar score
 function editAlScore(malId, element) {
     const current = element.textContent.trim();
@@ -894,18 +936,19 @@ else {
     };
 });
     // El resto sigue igual: sort, slice(0,10), render, cache, etc.
-    top10 = processed.sort((a, b) => {
+    seasonRanking = processed.sort((a, b) => {
     if (b.avg !== a.avg) return b.avg - a.avg;
     const maxA = Math.max(parseFloat(a.mal || 0), parseFloat(a.al || 0));
     const maxB = Math.max(parseFloat(b.mal || 0), parseFloat(b.al || 0));
     if (maxB !== maxA) return maxB - maxA;
     return a.title.localeCompare(b.title);
-}).slice(0, 10);
+});
 
-    grid.innerHTML = '';
-    top10.forEach((anime, i) => renderCard(anime, i));
+currentPage = 1;
+renderPage(currentPage);
 
-    saveSeasonCache(key, top10);
+saveSeasonCache(key, seasonRanking);
+
 
     startCountdown();
     loading.textContent = '';
