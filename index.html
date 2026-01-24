@@ -299,12 +299,12 @@ window.onload = () => {
         y.appendChild(o);
     }
 
-    // Restaurar año, temporada y checkboxes desde localStorage
-    const savedYear = localStorage.getItem('selectedYear');
-    const savedSeason = localStorage.getItem('selectedSeason');
-    const savedTypes = JSON.parse(localStorage.getItem('selectedTypes') || '[]');
+    // Restaurar desde localStorage
+    const savedYear    = localStorage.getItem('selectedYear');
+    const savedSeason  = localStorage.getItem('selectedSeason');
+    const savedTypes   = JSON.parse(localStorage.getItem('selectedTypes') || '[]');
 
-    if (savedYear && y.options.namedItem(savedYear)) {
+    if (savedYear && y.querySelector(`option[value="${savedYear}"]`)) {
         y.value = savedYear;
     } else {
         y.value = currentYear + (new Date().getMonth() >= 9 ? 1 : 0);
@@ -314,23 +314,26 @@ window.onload = () => {
         document.getElementById('season').value = savedSeason;
     }
 
-    // Restaurar checkboxes (TV siempre checked/disabled)
     document.getElementById('type-ona').checked    = savedTypes.includes("ONA");
     document.getElementById('type-movie').checked  = savedTypes.includes("Movie");
     document.getElementById('type-ova').checked    = savedTypes.includes("OVA");
     document.getElementById('type-special').checked = savedTypes.includes("Special");
 
     startCountdown();
+
+    // Guardar año al cambiar
     document.getElementById('year').addEventListener('change', () => {
         localStorage.setItem('selectedYear', document.getElementById('year').value);
         startCountdown();
     });
+
+    // Guardar temporada al cambiar
     document.getElementById('season').addEventListener('change', () => {
         localStorage.setItem('selectedSeason', document.getElementById('season').value);
         startCountdown();
     });
 
-    // Guardar checkboxes cada vez que cambian
+    // Guardar checkboxes al cambiar
     const checkboxes = document.querySelectorAll('.type-filters input[type="checkbox"]:not([disabled])');
     checkboxes.forEach(chk => {
         chk.addEventListener('change', () => {
@@ -339,10 +342,9 @@ window.onload = () => {
             if (document.getElementById('type-movie').checked)  selectedTypes.push("Movie");
             if (document.getElementById('type-ova').checked)    selectedTypes.push("OVA");
             if (document.getElementById('type-special').checked) selectedTypes.push("Special");
-
             localStorage.setItem('selectedTypes', JSON.stringify(selectedTypes));
 
-            // Invalidar caché y recargar automáticamente
+            // Invalidar caché y recargar
             const year = document.getElementById('year').value;
             const season = document.getElementById('season').value;
             if (year && season) {
@@ -352,7 +354,7 @@ window.onload = () => {
         });
     });
 
-    // Cargar automáticamente la última selección al entrar (opcional pero recomendado)
+    // Cargar automáticamente al entrar
     loadTop10();
 };
 
@@ -497,15 +499,14 @@ async function fetchSeasonFromAniList(year, season) {
 
     // Mapear a formato compatible con tu código actual (para que renderCard y scores funcionen)
     return allMedia.slice(0, 40).map(m => ({
-        mal_id: m.idMal || null,
-    title: m.title.english || m.title.romaji || "Sin título",
+    mal_id: m.idMal || null,
+    title: m.title?.english || m.title?.romaji || m.title?.native || "Sin título",
     image: m.coverImage?.large || '',
-    score: m.averageScore ? (m.averageScore / 10) : null,  // ← score de AniList
-    type: m.format,
-    al_id: m.id,
-        // Placeholder para score MAL (se llenará después)
-        mal_score_placeholder: null
-    }));
+    score: m.averageScore ? (m.averageScore / 10) : null,
+    format: m.format,
+    episodes: m.episodes,
+    al_id: m.id
+}));
 }
 
 
