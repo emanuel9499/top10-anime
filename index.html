@@ -383,6 +383,26 @@ async function fetchSeasonMAL(year, season) {
     // Ordenamos por score descendente (por si el API no lo respeta al 100%)
     animes.sort((a, b) => (b.score || 0) - (a.score || 0));
 
+    // Enriquecer con AniList solo los que tienen season/year null
+const enrichedAnimes = [];
+for (const a of animes) {
+    let enriched = { ...a }; // copia
+
+    if (!a.season || !a.year) {
+        const alInfo = await getAniListSeason(a.mal_id);
+        if (alInfo) {
+            enriched.al_season = alInfo.season;          // ej: "FALL"
+            enriched.al_seasonYear = alInfo.seasonYear;  // ej: 2025
+            enriched.al_startYear = alInfo.startYear;
+        }
+        await delay(300); // delay suave para no abusar rate limit
+    }
+
+    enrichedAnimes.push(enriched);
+}
+
+return enrichedAnimes.slice(0, 40);
+
     return animes.slice(0, 40);
 }
 async function fetchAniListBatch(malIds) {
@@ -440,6 +460,46 @@ async function fetchAniListBatch(malIds) {
     }
 
     return results;
+}
+
+// Consulta rápida a AniList por un solo MAL ID para obtener season y seasonYear
+async function getAniListSeason(malId) {
+    const query = `
+    query ($idMal: Int) {
+      Media(idMal: $idMal, type: ANIME) {
+        season
+        seasonYear
+        startDate {
+          year
+          month
+          day
+        }
+      }
+    }`;
+
+    try {
+        const res = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, variables: { idMal: malId } })
+        });
+
+        if (!res.ok) return null;
+
+        const data = await res.json();
+        const media = data.data?.Media;
+
+        if (!media) return null;
+
+        return {
+            season: media.season,          // ej: "FALL", "WINTER", null
+            seasonYear: media.seasonYear,  // ej: 2025
+            startYear: media.startDate?.year
+        };
+    } catch (e) {
+        console.error('Error fetching AniList season for MAL ID', malId, e);
+        return null;
+    }
 }
 
 function getManualScore(malId) {
