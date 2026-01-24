@@ -195,6 +195,20 @@ frames pulse {
     width: 100%;
 }
 
+/* La grilla empieza completamente oculta */
+#grid {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.4s ease, visibility 0s linear 0.4s; /* evita el "pop" al aparecer */
+}
+
+/* Cuando ya esté lista la mostramos con fade-in */
+#grid.loaded {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.5s ease, visibility 0s linear 0s;
+}
+
 /* En desktop: botones visibles, swipe desactivado */
 @media (min-width: 769px) {
     .grid-container {
@@ -882,7 +896,7 @@ if (totalMal === 0) {
 
         processedMal++;
         const malProgress = 30 + (55 * (processedMal / totalMal));
-        updateProgress(Math.min(85, malProgress), `Procesando (${processedMal} de ${totalMal})`);
+        updateProgress(Math.min(85, malProgress), `Procesando...`);
     }
 }
 
@@ -999,6 +1013,7 @@ const enrichedList = candidates.map(ani => {
             renderPage(pageToRender);
             currentPage = pageToRender;
             updatePageButtons();
+            grid.classList.add('loaded');
 
             startCountdown();
         } catch (err) {
