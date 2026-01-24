@@ -796,21 +796,33 @@ for (const id of malIdsToFetch) {
     updateProgress(60);
 
     // Combinar: AniList como base, enriquecer con MAL donde exista
-    const enrichedList = aniList.map(ani => {
+   const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // TÍTULO: SIEMPRE de AniList (nunca de MAL)
-    let title = mal?.title?.english || mal?.title || ani.title?.english || ani.title?.romaji || ani.title?.native || "Sin título";
+    // TÍTULO: SIEMPRE de MAL (como en la versión vieja que funcionaba perfecto)
+    let title = mal?.title?.english || 
+                mal?.title || 
+                "Sin título de MAL";
 
-    // IMAGEN: SIEMPRE de AniList primero (MAL solo como fallback raro)
-    let imageUrl = ani.image || (mal?.images?.jpg?.large_image_url || 'https://via.placeholder.com/300x450?text=Sin+Imagen');
+    // Si MAL no tiene título útil, fallback a AniList (muy raro que pase)
+    if (title === "Sin título de MAL" || !title.trim()) {
+        title = ani.title?.english || 
+                ani.title?.romaji || 
+                ani.title?.native || 
+                "Sin título";
+    }
+
+    // IMAGEN: AniList primero → MAL como fallback
+    let imageUrl = ani.image || 
+                   (mal?.images?.jpg?.large_image_url || 
+                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
 
     return {
         mal_id: ani.mal_id,
-        title: title,               // ← ahora siempre AniList
-        image: imageUrl,            // ← ahora siempre AniList primero
+        title: title.trim(),
+        image: imageUrl,
         mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-        al: ani.score ? ani.score.toFixed(2) : null,  // ya viene como number de AniList
+        al: ani.score ? ani.score.toFixed(2) : null,
         al_id: ani.al_id,
         type: ani.format || 'Unknown'
     };
