@@ -744,28 +744,23 @@ for (const id of malIdsToFetch) {
     const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // Imagen segura: MAL primero, AniList fallback
-    let imageUrl = '';
-    if (mal?.images?.jpg?.large_image_url) {
-        imageUrl = mal.images.jpg.large_image_url;
-    } else if (ani.image) {
-    imageUrl = ani.image; // ← imagen de AniList
-}
- else {
-        imageUrl = 'https://via.placeholder.com/300x450?text=No+Image';  // fallback bonito
-    }
+    // Prioridad de imagen: MAL > AniList > placeholder
+    let imageUrl = mal?.images?.jpg?.large_image_url ||
+                   ani.coverImage?.large ||
+                   'https://via.placeholder.com/300x450?text=Sin+Imagen';
+
+    // Prioridad de título: MAL english > AniList english > romaji > fallback
+    let title = mal?.title?.english ||
+                ani.title?.english ||
+                ani.title?.romaji ||
+                "Sin título";
 
     return {
         mal_id: ani.mal_id,
-        title:
-    mal?.title_english ||
-    mal?.title ||
-    ani.title ||           // ← ya es string desde AniList
-    "Título no disponible",
-
+        title: title,
         image: imageUrl,
         mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-        al: ani.score ? ani.score.toFixed(2) : null,  // score de AniList
+        al: ani.score ? ani.score.toFixed(2) : null,
         al_id: ani.al_id,
         type: ani.format || ani.type || 'Unknown'
     };
@@ -779,28 +774,30 @@ for (const id of malIdsToFetch) {
     // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
 
     const processed = enrichedList.map(ani => {
-    const malScore = ani.mal ?? null;  // score de MAL (enriquecido)
-    let alScore = ani.al ?? getManualScore(ani.mal_id);  // si editaste manual
+    const malScore = ani.mal ?? null;
+    let alScore = ani.al ?? getManualScore(ani.mal_id);
 
-    // Si no hay score manual ni MAL, fallback al score de AniList
-    if (!alScore && ani.score) {
-        alScore = ani.score.toFixed(2);
+    // Si no hay manual ni MAL, fallback a AniList (ya lo tenés, pero reforzamos)
+    if (!alScore && ani.al) {
+        alScore = ani.al;
     }
 
-    const avg = alScore ? (parseFloat(malScore || 0) + parseFloat(alScore)) / 2 : parseFloat(malScore || 0);
+    // Evitar NaN en promedio
+    const malNum = malScore ? parseFloat(malScore) : 0;
+    const alNum = alScore ? parseFloat(alScore) : 0;
+    const avg = (malNum + alNum) / (malNum && alNum ? 2 : 1); // si solo uno, usa ese
 
     return {
-        title: ani.title,
-        image: ani.image,
-        mal: malScore?.toFixed(2) ?? 'N/A',
-        al: alScore ?? 'N/A',
+        title: ani.title || "Sin título",
+        image: ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen',
+        mal: malScore ? malScore.toFixed(2) : 'N/A',
+        al: alScore ? alScore.toFixed(2) : 'N/A',
         avg: avg.toFixed(2),
-        sources: alScore ? 2 : (malScore ? 1 : 0),
+        sources: (malScore ? 1 : 0) + (alScore ? 1 : 0),
         mal_id: ani.mal_id,
         al_id: ani.al_id
     };
 });
-
     // El resto sigue igual: sort, slice(0,10), render, cache, etc.
     top10 = processed.sort(/* tu lógica de sort actual */).slice(0, 10);
 
