@@ -621,15 +621,19 @@ function renderCard(anime, index) {
     const finalAlScore = alScore || 'N/A';
    
 
+
     // Promedio actualizado con score manual si existe
-    let malScore = anime.mal != null && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
-let alFinal = alScore != null ? parseFloat(alScore) : null;
+let malScore = anime.mal != null && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
+let alFinal  = alScore != null ? parseFloat(alScore) : null;
 
 let avgNum = 0;
 let count = 0;
 if (malScore != null) { avgNum += malScore; count++; }
-if (alFinal != null) { avgNum += alFinal; count++; }
-const avg = count > 0 ? (avgNum / count).toFixed(2) : 'N/A';
+if (alFinal  != null) { avgNum += alFinal;  count++; }
+
+const avg = count === 2 ? (avgNum / 2).toFixed(2) :
+            count === 1 ? avgNum.toFixed(2) :
+            'N/A';
 
     card.innerHTML = `
     <div class="rank ${rankClass}">#${index + 1}</div>
@@ -799,22 +803,17 @@ for (const id of malIdsToFetch) {
    const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // TÍTULO: SIEMPRE de MAL (como en la versión vieja que funcionaba perfecto)
-    let title = mal?.title?.english || 
-                mal?.title || 
-                "Sin título de MAL";
-
-    // Si MAL no tiene título útil, fallback a AniList (muy raro que pase)
-    if (title === "Sin título de MAL" || !title.trim()) {
-        title = ani.title?.english || 
-                ani.title?.romaji || 
-                ani.title?.native || 
+    // TÍTULO: Prioridad absoluta a MAL, preferentemente en inglés
+    let title = mal?.title?.english ||           // 1. Inglés de MAL
+                mal?.title ||                    // 2. Título japonés (romaji) de MAL
+                ani.title?.english ||            // 3. Inglés de AniList
+                ani.title?.romaji ||             // 4. Romaji de AniList
+                ani.title?.native ||             // 5. Native (kanji) de AniList
                 "Sin título";
-    }
 
-    // IMAGEN: AniList primero → MAL como fallback
-    let imageUrl = ani.image || 
-                   (mal?.images?.jpg?.large_image_url || 
+    // IMAGEN: AniList primero, MAL como fallback
+    let imageUrl = ani.image ||
+                   (mal?.images?.jpg?.large_image_url ||
                     'https://via.placeholder.com/300x450?text=Sin+Imagen');
 
     return {
@@ -996,36 +995,42 @@ renderCard = function(anime, index) {
     const avgElement  = card.querySelector('.average');
 
     // Valores seguros (igual que en processed y renderCard original)
-    const malVal = anime.mal !== 'N/A' && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
-    const alVal  = anime.al  !== 'N/A' && !isNaN(parseFloat(anime.al))  ? parseFloat(anime.al)  : null;
+    // Valores seguros
+const malVal = anime.mal !== 'N/A' && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
+const alVal  = anime.al  !== 'N/A' && !isNaN(parseFloat(anime.al))  ? parseFloat(anime.al)  : null;
 
-    // Promedio
-    let avgNum = 0;
-    let sources = 0;
-    if (malVal !== null) { avgNum += malVal; sources++; }
-    if (alVal  !== null) { avgNum += alVal;  sources++; }
-    const avgRaw = sources > 0 ? avgNum / sources : null;
+// Promedio
+let avgNum = 0;
+let sources = 0;
+if (malVal !== null) { avgNum += malVal; sources++; }
+if (alVal  !== null) { avgNum += alVal;  sources++; }
 
-    // Formateador
-    const format = (num) =>
-        currentScoreMode === 'percent'
-            ? (num * 10).toFixed(2) + '%'
-            : (num !== null ? num.toFixed(2) : 'N/A');
+const avgRaw = sources === 2 ? avgNum / 2 :
+               sources === 1 ? avgNum :
+               null;
 
-    // Actualizar textos
-    if (malTextNode) {
-        malTextNode.textContent = `MAL: ${format(malVal)} | AniList: `;
+// Formateador (ahora maneja N/A correctamente)
+const format = (num) => {
+    if (num === null) return 'N/A';
+    const formatted = currentScoreMode === 'percent'
+        ? (num * 10).toFixed(2) + '%'
+        : num.toFixed(2);
+    return formatted;
+};
+
+// Actualizar textos
+if (malTextNode) {
+    malTextNode.textContent = `MAL: ${format(malVal)} | AniList: `;
+}
+if (alElement) {
+    alElement.textContent = format(alVal);
+    if (alElement.classList.contains('al-score') && alVal === null) {
+        alElement.textContent = 'N/A (editar)';
     }
-    if (alElement) {
-        alElement.textContent = format(alVal);
-        // Si es editable (clase al-score), mantener el (editar) si aplica
-        if (alElement.classList.contains('al-score') && alVal === null) {
-            alElement.textContent = 'N/A (editar)';
-        }
-    }
-    if (avgElement) {
-        avgElement.textContent = `⭐ ${format(avgRaw)}`;
-    }
+}
+if (avgElement) {
+    avgElement.textContent = `⭐ ${format(avgRaw)}`;
+}
 };
 // FIN NUEVO (versión corregida)
 // ────────────────────────────────────────────────
