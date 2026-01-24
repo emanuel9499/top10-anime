@@ -510,13 +510,18 @@ query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: I
     // Mapear a formato compatible con tu código actual (para que renderCard y scores funcionen)
     return allMedia.slice(0, 40).map(m => ({
     mal_id: m.idMal || null,
-    title: m.title?.english || m.title?.romaji || m.title?.native || "Título desconocido",
+    titles: {
+        english: m.title?.english ?? null,
+        romaji:  m.title?.romaji  ?? null,
+        native:  m.title?.native  ?? null
+    },
     image: m.coverImage?.large || '',
     score: m.averageScore ? (m.averageScore / 10) : null,
     format: m.format,
     episodes: m.episodes,
     al_id: m.id
 }));
+
 }
 
 
@@ -803,13 +808,33 @@ for (const id of malIdsToFetch) {
    const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // TÍTULO: Intentamos MAL primero (como querías)
-    let title = mal?.title_english || mal?.title;
+    // TÍTULO FINAL (MAL EN > AniList EN > AniList Romaji > Native)
+let title = null;
 
-    // Si MAL no dio nada útil (null, undefined o vacío), USAMOS DIRECTO AniList
-    if (!title || title.trim() === '') {
-        title = ani.title?.english || ani.title?.romaji || ani.title?.native || "Sin título";
-    }
+// 1️⃣ MAL inglés
+if (mal?.title_english && mal.title_english.trim() !== '') {
+    title = mal.title_english.trim();
+}
+// 2️⃣ MAL fallback (romaji/japonés)
+else if (mal?.title && mal.title.trim() !== '') {
+    title = mal.title.trim();
+}
+// 3️⃣ AniList inglés
+else if (ani.titles?.english) {
+    title = ani.titles.english;
+}
+// 4️⃣ AniList romaji
+else if (ani.titles?.romaji) {
+    title = ani.titles.romaji;
+}
+// 5️⃣ AniList native
+else if (ani.titles?.native) {
+    title = ani.titles.native;
+}
+// 6️⃣ último recurso
+else {
+    title = "Sin título";
+}
 
     // IMAGEN: AniList rey, MAL backup
     let imageUrl = ani.image ||
