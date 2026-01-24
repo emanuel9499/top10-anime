@@ -188,180 +188,53 @@ frames pulse {
     0% { background-position:0% }
     100% { background-position:200% }
 }
-@media(max-width:1200px){ .grid{grid-template-columns:repeat(3,1fr);} }
-@media(max-width:800px){ 
-    .grid{grid-template-columns:repeat(2,1fr);} 
-    .progress-container { width: 90%; }
-}
-@keyframes fadeUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-.bottom {
-    margin-top: auto;
-}
-/* Ajustes para que el dropdown quede con la misma altura y estilo */
-#scoreMode {
-    padding: 8px 12px;                /* altura similar a checkboxes */
-    font-size: 1.1em;                 /* mismo tamaño de letra que los labels */
-    border-radius: 8px;
-    border: 2px solid #cc0000;
-    background: #111;
-    color: #fff;
-    min-height: 38px;                 /* altura aproximada para alinear con labels */
-    cursor: pointer;
+/* Contenedor que permite el swipe */
+.grid-container {
+    display: flex;
+    transition: transform 0.4s ease;
+    width: 100%;
 }
 
-#scoreMode option {
-    background: #111;
-    color: #fff;
+/* En desktop: botones visibles, swipe desactivado */
+@media (min-width: 769px) {
+    .grid-container {
+        transform: none !important; /* no swipe en desktop */
+    }
 }
 
-/* Opcional: hover en el dropdown para que coincida con el botón */
-#scoreMode:hover {
-    border-color: #ff4444;
-    box-shadow: 0 0 8px rgba(204,0,0,0.4);
-}
-/* Mejoras para móviles y tablets - Versión mejorada */
+/* En móvil: preparamos para swipe horizontal */
 @media (max-width: 768px) {
-    body {
-        padding: 12px;
-        font-size: 16px; /* base más legible */
-    }
-
-    h1 {
-        font-size: 2em;
-        margin: 15px 0;
-    }
-
-    .controls {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 18px;
-        margin: 20px auto;
-    }
-
-    select, button {
-        width: 100%;
-        max-width: 380px;
-        padding: 14px 16px;
-        font-size: 1.15em;
-        border-radius: 10px;
-        margin: 6px 0;
-    }
-
-    button {
-        min-height: 52px; /* más fáciles de tocar */
-    }
-
-    /* Contenedor de checkboxes + modo puntaje */
-    .controls > div[style*="display: flex; flex-wrap: wrap"] {
-        width: 100%;
-        max-width: 380px;
-        flex-direction: column;
-        gap: 18px;
-        align-items: flex-start;
-    }
-
-    .type-filters {
-        flex-direction: column;
-        gap: 14px;
-        width: 100%;
-    }
-
-    .type-filters label {
-        font-size: 1.15em;
-    }
-
-    /* Grid: 2 columnas en móviles */
     .grid {
         grid-template-columns: repeat(2, 1fr);
-        gap: 18px;
-        margin: 25px auto;
-        max-width: 100%;
-    }
-
-    .anime-card {
-        padding: 10px;
-        border-radius: 12px;
-        box-shadow: 0 0 12px rgba(204,0,0,.3);
+        gap: 16px;
+        width: 100%;
+        margin: 0;
     }
 
     .anime-card img {
-        height: 220px;          /* altura más compacta pero buena proporción */
-        object-fit: cover;
-        border-radius: 10px;
-    }
-
-    .rank {
-        font-size: 1.8em;
+        height: 210px;
     }
 
     .title {
-        font-size: 1.05em;
-        line-height: 1.25em;
+        font-size: 1em;
         -webkit-line-clamp: 3;
-        min-height: 3.9em;      /* 3 líneas aprox. */
-        margin: 8px 0 4px;
-    }
-
-    .scores {
-        font-size: 0.82em;
-        margin: 4px 0;
+        min-height: 3.9em;
     }
 
     .average {
-        font-size: 1.35em;
-        margin: 8px 0 12px;
+        font-size: 1.3em;
     }
 
-    /* Botones de paginación */
-    #prevPageBtn, #nextPageBtn {
-        padding: 14px 24px;
-        font-size: 1.15em;
-        min-width: 140px;
+    /* Ocultar botones de paginación en móvil */
+    .pagination-buttons {
+        display: none !important;
     }
 
-    /* Alinear los 3 botones en una fila cuando sea posible */
-    .controls > div[style*="display: flex; gap: 15px"] {
-        flex-direction: row;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 12px;
-        width: 100%;
-        max-width: 380px;
-    }
-
-    .progress-container {
-        width: 95%;
-        margin: 25px auto;
-    }
-
-    #updateInfo {
-        font-size: 0.95em;
-        margin: 10px auto;
+    /* Swipe más suave */
+    .grid-container {
+        touch-action: pan-y;
     }
 }
-
-/* Tablets medianos (768-1024px) */
-@media (min-width: 769px) and (max-width: 1024px) {
-    .grid {
-        grid-template-columns: repeat(3, 1fr);
-        gap: 22px;
-    }
-
-    .anime-card img {
-        height: 260px;
-    }
-}
-
 /* Desktop grande (más de 1024px) - ya tenés 5 columnas, lo dejamos como está */
 </style>
 </head>
@@ -403,11 +276,11 @@ frames pulse {
     <div style="display: flex; gap: 15px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 15px;">
         <button onclick="loadTop10()">Buscar</button>
         <button id="prevPageBtn" onclick="prevPage()" style="background: linear-gradient(45deg, #444, #666);">
-            ← Anterior
-        </button>
-        <button id="nextPageBtn" onclick="nextPage()" style="background: linear-gradient(45deg, #444, #666);">
-            Siguiente →
-        </button>
+        ← Anterior
+    </button>
+    <button id="nextPageBtn" onclick="nextPage()" style="background: linear-gradient(45deg, #444, #666);">
+        Siguiente →
+    </button>
     </div>
 </div>
 
@@ -419,8 +292,10 @@ frames pulse {
 
 
 <!-- Navegación sobre el grid -->
-<div id="gridContainer" style="max-width: 1400px; margin: 0 auto;">
-    <div id="grid" class="grid"></div>
+<div id="gridWrapper" style="overflow: hidden; max-width: 1400px; margin: 0 auto; touch-action: pan-y;">
+    <div id="gridContainer" class="grid-container" style="display: flex; transition: transform 0.4s ease; width: 100%;">
+        <div id="grid" class="grid"></div>
+    </div>
 </div>
 
 
@@ -1249,6 +1124,63 @@ function nextPage() {
 function updatePageButtons() {
     document.getElementById('prevPageBtn').disabled = currentPage === 1;
     document.getElementById('nextPageBtn').disabled = currentPage * itemsPerPage >= seasonRanking.length;
+}
+
+// ────────────────────────────────────────────────
+// Navegación con swipe (solo en móvil) y flechas del teclado
+// ────────────────────────────────────────────────
+
+let touchStartX = 0;
+let touchEndX = 0;
+const swipeThreshold = 50; // píxeles mínimos para considerar swipe
+
+const gridWrapper = document.getElementById('gridWrapper');
+const gridContainer = document.getElementById('gridContainer');
+
+// Solo activamos swipe en pantallas pequeñas
+if (window.innerWidth <= 768) {
+    gridWrapper.addEventListener('touchstart', e => {
+        touchStartX = e.changedTouches[0].screenX;
+    });
+
+    gridWrapper.addEventListener('touchend', e => {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+    });
+}
+
+function handleSwipe() {
+    if (touchStartX - touchEndX > swipeThreshold) {
+        // Swipe izquierda → siguiente página
+        nextPage();
+    }
+    if (touchEndX - touchStartX > swipeThreshold) {
+        // Swipe derecha → página anterior
+        prevPage();
+    }
+}
+
+// Soporte para flechas del teclado (en desktop y móvil)
+document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') {
+        prevPage();
+        e.preventDefault();
+    } else if (e.key === 'ArrowRight') {
+        nextPage();
+        e.preventDefault();
+    }
+});
+
+// Actualizamos la clase active para que el swipe funcione solo cuando hay más de una página
+function updatePageButtons() {
+    document.getElementById('prevPageBtn').disabled = currentPage === 1;
+    document.getElementById('nextPageBtn').disabled = currentPage * itemsPerPage >= seasonRanking.length;
+
+    // En móvil mostramos visualmente si hay más páginas (opcional)
+    if (window.innerWidth <= 768) {
+        gridWrapper.classList.toggle('has-prev', currentPage > 1);
+        gridWrapper.classList.toggle('has-next', currentPage * itemsPerPage < seasonRanking.length);
+    }
 }
 
 </script>
