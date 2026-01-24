@@ -510,7 +510,7 @@ query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: I
     // Mapear a formato compatible con tu código actual (para que renderCard y scores funcionen)
     return allMedia.slice(0, 40).map(m => ({
     mal_id: m.idMal || null,
-    title: m.title?.english || m.title?.romaji || m.title?.native || "Sin título",
+    title: m.title?.english || m.title?.romaji || m.title?.native || "Título desconocido",
     image: m.coverImage?.large || '',
     score: m.averageScore ? (m.averageScore / 10) : null,
     format: m.format,
@@ -800,11 +800,10 @@ for (const id of malIdsToFetch) {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
     // TÍTULO: SIEMPRE de AniList (nunca de MAL)
-    let title = ani.title?.english || ani.title?.romaji || ani.title?.native || "Sin título";
+    let title = mal?.title?.english || mal?.title || ani.title?.english || ani.title?.romaji || ani.title?.native || "Sin título";
 
     // IMAGEN: SIEMPRE de AniList primero (MAL solo como fallback raro)
-    let imageUrl = ani.image ||  // ya es m.coverImage.large de AniList
-                   (mal?.images?.jpg?.large_image_url || 'https://via.placeholder.com/300x450?text=Sin+Imagen');
+    let imageUrl = ani.image || (mal?.images?.jpg?.large_image_url || 'https://via.placeholder.com/300x450?text=Sin+Imagen');
 
     return {
         mal_id: ani.mal_id,
