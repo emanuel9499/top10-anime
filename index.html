@@ -228,6 +228,13 @@ frames pulse {
 </div>
     <button onclick="loadTop10()">Buscar</button>
 </div>
+<div style="margin: 20px auto; font-size: 1.1em;">
+    <label for="scoreMode">Mostrar puntajes como:</label>
+    <select id="scoreMode">
+        <option value="normal">Normal (ej: 8.45)</option>
+        <option value="percent">Porcentual (ej: 84.50%)</option>
+    </select>
+</div>
 <div id="updateInfo" style="margin: 15px auto; font-size: 1.1em; color: #ff9999; min-height: 1.5em;">
     Próxima actualización en: <span id="countdown">--:--:--</span>
 </div>
@@ -280,7 +287,7 @@ window.onload = () => {
         });
     });
     // ────────────────────────────────────────────────
-};
+};git add .git commit -m "Initial commit - Top 10 Animes por Temporada"
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
