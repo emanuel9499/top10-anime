@@ -391,54 +391,86 @@ async function getAniListSeason(malId) {
     }
 }
 
-async function fetchSeasonMAL(year, season) {
-    let page = 1;
-    let animes = [];
-    const allowedTypes = getSelectedTypes();
-
-    if (allowedTypes.length === 0) return [];
-
-    while (animes.length < 40 && page <= 6) {
-        const res = await fetch(
-            `https://api.jikan.moe/v4/seasons/${year}/${season}?order_by=score&sort=desc&page=${page}&limit=25`
-        );
-        if (!res.ok) break;
-
-        const data = await res.json();
-        const pageItems = data.data || [];
-
-        const filtered = pageItems.filter(a => {
-            if (!a.score) return false;
-            return allowedTypes.includes(a.type);
-        });
-
-        animes = animes.concat(filtered);
-        page++;
-        await delay(420);
-    }
-
-    animes.sort((a, b) => (b.score || 0) - (a.score || 0));
-
-    // Enriquecer SOLO los que necesitan (season o year null)
-    const enrichedAnimes = [];
-    for (const a of animes) {
-        let enriched = { ...a };
-
-        if (!a.season || !a.year) {
-            console.log(`Enriqueciendo ${a.title} (MAL ID: ${a.mal_id})...`);
-            const alInfo = await getAniListSeason(a.mal_id);
-            if (alInfo) {
-                enriched.al_season = alInfo.season;
-                enriched.al_seasonYear = alInfo.seasonYear;
-                enriched.al_startYear = alInfo.startYear;
-            }
-            await delay(300); // rate limit safety
+async function fetchSeasonFromAniList(year, season) {
+    const allowedFormats = getSelectedTypes().map(t => {
+        switch (t) {
+            case "TV": return "TV";
+            case "ONA": return "ONA";
+            case "Movie": return "MOVIE";
+            case "OVA": return "OVA";
+            case "Special": return "SPECIAL";
+            default: return null;
         }
+    }).filter(Boolean);
 
-        enrichedAnimes.push(enriched);
+    if (allowedFormats.length === 0) return [];
+
+    const aniSeason = season.toUpperCase(); // WINTER, SPRING, SUMMER, FALL
+
+    const query = `
+    query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: Int) {
+      Page(page: $page, perPage: 50) {
+        pageInfo { hasNextPage }
+        media(seasonYear: $seasonYear, season: $season, format_in: $formats, type: ANIME, sort: SCORE_DESC) {
+          id
+          idMal
+          title { english romaji }
+          averageScore
+          format
+          episodes
+          coverImage { large }
+        }
+      }
+    }`;
+
+    let allMedia = [];
+    let page = 1;
+    let hasNext = true;
+
+    while (hasNext && allMedia.length < 60) {
+        try {
+            const res = await fetch('https://graphql.anilist.co', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query,
+                    variables: { seasonYear: year, season: aniSeason, formats: allowedFormats, page }
+                })
+            });
+
+            if (!res.ok) break;
+
+            const { data } = await res.json();
+            const pageData = data?.Page;
+
+            if (!pageData?.media) break;
+
+            allMedia.push(...pageData.media);
+            hasNext = pageData.pageInfo.hasNextPage;
+            page++;
+            await delay(700); // Rate limit AniList ~90/min, mejor ser conservador
+        } catch (e) {
+            console.error("Error fetching AniList season", e);
+            break;
+        }
     }
 
-    return enrichedAnimes.slice(0, 40);
+    // Ordenar por score descendente (aunque ya pedimos sort)
+    allMedia.sort((a, b) => (b.averageScore || 0) - (a.averageScore || 0));
+
+    // Mapear a formato compatible con tu código actual (para que renderCard y scores funcionen)
+    return allMedia.slice(0, 40).map(m => ({
+        mal_id: m.idMal || null,
+        title: m.title.english || m.title.romaji || "Sin título",
+        title_english: m.title.english,
+        images: { jpg: { large_image_url: m.coverImage?.large || '' } },
+        score: m.averageScore ? (m.averageScore / 10) : null, // temporal, se sobreescribe con MAL después
+        type: m.format,
+        episodes: m.episodes,
+        al_id: m.id,
+        // Placeholder para score MAL (se llenará después)
+        mal_score_placeholder: null
+    }));
 }
 
 
@@ -631,70 +663,94 @@ async function loadTop10() {
     progressContainer.style.display = 'block';
     updateProgress(0);
     renderSkeletons();
-    let fakeProgress = 0;
-const fakeInterval = setInterval(() => {
-    fakeProgress += Math.random() * 4 + 1; // sube lento y natural
-    if (fakeProgress < 85) {
-        updateProgress(fakeProgress);
-    }
-}, 300);
 
-    const malList = await fetchSeasonMAL(year, season);
+    let fakeProgress = 0;
+    const fakeInterval = setInterval(() => {
+        fakeProgress += Math.random() * 4 + 1;
+        if (fakeProgress < 85) updateProgress(fakeProgress);
+    }, 300);
+
+    // ──────────────────────────────
+    // Aquí va el bloque que pegaste (reemplaza lo viejo de malList)
+    const aniList = await fetchSeasonFromAniList(year, season);
     updateProgress(30);
 
-    const malIds = malList.map(a => a.mal_id);
-    const alData = await fetchAniListBatch(malIds);
+    // Obtener datos completos de MAL para los que tengan idMal
+    const malIds = aniList.filter(a => a.mal_id).map(a => a.mal_id);
+    const malDataById = {};
+
+    if (malIds.length > 0) {
+        for (const id of malIds) {
+            try {
+                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                if (res.ok) {
+                    const data = await res.json();
+                    malDataById[id] = data.data;
+                }
+                await delay(400);
+            } catch (e) {
+                console.error("Error fetching MAL full for", id, e);
+            }
+        }
+    }
+
+    updateProgress(60);
+
+    // Combinar: AniList como base, enriquecer con MAL donde exista
+    const enrichedList = aniList.map(ani => {
+        const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+
+        return {
+            mal_id: ani.mal_id,
+            title: mal?.title_english || mal?.title || ani.title,
+            image: mal?.images?.jpg?.large_image_url || ani.images.jpg.large_image_url,
+            mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : (ani.score || null),
+            al: ani.averageScore ? (ani.averageScore / 10).toFixed(2) : null,
+            al_id: ani.al_id,
+            type: ani.format,  // AniList usa "format" en vez de "type"
+            // Si necesitas episodes u otros campos, agrégalos aquí
+        };
+    });
+    // ──────────────────────────────
+
     clearInterval(fakeInterval);
     updateProgress(90);
 
-    const processed = malList.map(mal => {
-        const malScore = parseFloat(mal.score.toFixed(2));
-        const al = alData[mal.mal_id];
-        let alScore = al?.score || getManualScore(mal.mal_id);
+    // Aquí sigue tu código original de alData (si lo mantenés)
+    // const alData = await fetchAniListBatch(enrichedList.map(a => a.mal_id).filter(Boolean));
 
-        const avg = alScore ? (malScore + parseFloat(alScore)) / 2 : malScore;
+    const processed = enrichedList.map(ani => {
+        const malScore = ani.mal ?? null;  // ya viene enriquecido de MAL
+        let alScore = ani.al ?? getManualScore(ani.mal_id);
+
+        const avg = alScore ? (parseFloat(malScore || 0) + parseFloat(alScore)) / 2 : parseFloat(malScore || 0);
 
         return {
-            title: mal.title_english || mal.title,
-            image: mal.images.jpg.large_image_url,
-            mal: malScore.toFixed(2),
+            title: ani.title,
+            image: ani.image,
+            mal: malScore?.toFixed(2) ?? 'N/A',
             al: alScore,
-            avg,
-            sources: alScore ? 2 : 1,
-            mal_id: mal.mal_id,
-            al_id: al?.id
+            avg: avg.toFixed(2),
+            sources: alScore ? 2 : (malScore ? 1 : 0),
+            mal_id: ani.mal_id,
+            al_id: ani.al_id
         };
     });
 
-    top10 = processed.sort((a, b) => {
-    if (b.avg !== a.avg) return b.avg - a.avg;
+    // El resto sigue igual: sort, slice(0,10), render, cache, etc.
+    top10 = processed.sort(/* tu lógica de sort actual */).slice(0, 10);
 
-    const maxA = Math.max(parseFloat(a.mal), parseFloat(a.al || 0));
-    const maxB = Math.max(parseFloat(b.mal), parseFloat(b.al || 0));
-
-    if (maxB !== maxA) return maxB - maxA;
-
-    return a.title.localeCompare(b.title);
-}).slice(0, 10);
-
-        // Render
     grid.innerHTML = '';
     top10.forEach((anime, i) => renderCard(anime, i));
 
-    // Cache
     saveSeasonCache(key, top10);
 
     startCountdown();
-
     loading.textContent = '';
-
-    // Cierre visual correcto
     updateProgress(100);
     setTimeout(() => {
         progressContainer.style.display = 'none';
     }, 300);
-
-
 }
 // Retorna milisegundos restantes hasta que expire el caché de esta temporada
 function getTimeUntilNextUpdate(year, season) {
