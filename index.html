@@ -808,7 +808,7 @@ for (const id of malIdsToFetch) {
         let attempts = 0;
         while (attempts < 3) {
             try {
-                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}?fields=title,score,images`);
+                const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
                 if (res.status === 429) {
                     console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
                     await delay(5000 * (attempts + 1));  // backoff exponencial
