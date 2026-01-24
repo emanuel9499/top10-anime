@@ -788,26 +788,21 @@ for (const id of malIdsToFetch) {
     const enrichedList = aniList.map(ani => {
     const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-    // Prioridad de imagen: MAL > AniList > placeholder
-    let imageUrl = mal?.images?.jpg?.large_image_url ||
-                   ani.coverImage?.large ||
-                   'https://via.placeholder.com/300x450?text=Sin+Imagen';
+    // TÍTULO: SIEMPRE de AniList (nunca de MAL)
+    let title = ani.title?.english || ani.title?.romaji || ani.title?.native || "Sin título";
 
-    // Prioridad de título: MAL english > AniList english > AniList romaji > AniList native > fallback
-let title = mal?.title?.english ||
-            ani.title?.english ||
-            ani.title?.romaji ||
-            ani.title?.native ||
-            "Sin título";
+    // IMAGEN: SIEMPRE de AniList primero (MAL solo como fallback raro)
+    let imageUrl = ani.image ||  // ya es m.coverImage.large de AniList
+                   (mal?.images?.jpg?.large_image_url || 'https://via.placeholder.com/300x450?text=Sin+Imagen');
 
     return {
         mal_id: ani.mal_id,
-        title: title,
-        image: imageUrl,
+        title: title,               // ← ahora siempre AniList
+        image: imageUrl,            // ← ahora siempre AniList primero
         mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-        al: ani.score ? ani.score.toFixed(2) : null,
+        al: ani.score ? ani.score.toFixed(2) : null,  // ya viene como number de AniList
         al_id: ani.al_id,
-        type: ani.format || ani.type || 'Unknown'
+        type: ani.format || 'Unknown'
     };
 });
     // ──────────────────────────────
@@ -822,30 +817,28 @@ let title = mal?.title?.english ||
     const malScoreRaw = ani.mal ?? null;
     let alScoreRaw = ani.al ?? getManualScore(ani.mal_id);
 
-    // Si no hay manual ni MAL, usar AniList directamente (ya lo tenías, pero reforzamos)
+    // Si no hay manual y no hay MAL → usar AniList (ya debería venir)
     if (alScoreRaw == null && ani.al != null) {
         alScoreRaw = ani.al;
     }
 
-    // Convertir a número seguro (evitar NaN)
+    // Números seguros (evitar NaN)
     const malNum = malScoreRaw != null && !isNaN(malScoreRaw) ? parseFloat(malScoreRaw) : null;
     const alNum = alScoreRaw != null && !isNaN(alScoreRaw) ? parseFloat(alScoreRaw) : null;
 
-    // Promedio seguro
+    // Promedio
     let avgNum = 0;
     let sourcesCount = 0;
     if (malNum != null) { avgNum += malNum; sourcesCount++; }
     if (alNum != null) { avgNum += alNum; sourcesCount++; }
     if (sourcesCount > 0) avgNum /= sourcesCount;
 
-    // Imagen ultra-segura: AniList > MAL > placeholder
-    let imageUrl = ani.image ||  // ya viene de AniList
-                   mal?.images?.jpg?.large_image_url ||
-                   'https://via.placeholder.com/300x450?text=Sin+Imagen';
+    // Imagen FINAL: AniList es rey
+    let finalImage = ani.image || 'https://via.placeholder.com/300x450?text=Sin+Imagen';
 
     return {
-        title: ani.title || "Sin título",
-        image: imageUrl,
+        title: ani.title || "Sin título",  // ya viene de AniList
+        image: finalImage,
         mal: malNum != null ? malNum.toFixed(2) : 'N/A',
         al: alNum != null ? alNum.toFixed(2) : 'N/A',
         avg: avgNum.toFixed(2),
