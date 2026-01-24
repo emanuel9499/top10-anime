@@ -318,75 +318,84 @@ let currentLoadPromise = null; // Para poder abortar/cancelar
 
 window.onload = () => {
     const y = document.getElementById('year');
-    const currentYear = new Date().getFullYear();
     
-    // Generamos opciones desde el año actual +2 hasta 1990
-    for (let i = currentYear + 2; i >= 1990; i--) {
-        const o = document.createElement('option');
-        o.value = i;
-        o.textContent = i;
-        y.appendChild(o);
+    // Llenar el select de años (ejemplo: últimos 20 años + el actual + próximo)
+    const currentYear = new Date().getFullYear();
+    for (let i = currentYear + 1; i >= currentYear - 20; i--) {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = i;
+        y.appendChild(opt);
     }
+    // Seleccionar el año actual por defecto
+    y.value = currentYear;
 
-    // Restaurar año guardado
-    const savedYear = localStorage.getItem('selectedYear');
-    if (savedYear && y.querySelector(`option[value="${savedYear}"]`)) {
-        y.value = savedYear;
-    } else {
-        // Fallback: año actual (o próximo si ya estamos en Q4, pero por simplicidad usamos current)
-        y.value = currentYear;
-    }
-
-    // Restaurar temporada
+    // Restaurar temporada seleccionada si existe
     const savedSeason = localStorage.getItem('selectedSeason');
     if (savedSeason) {
-        const seasonSelect = document.getElementById('season');
-        if (seasonSelect.querySelector(`option[value="${savedSeason}"]`)) {
-            seasonSelect.value = savedSeason;
-        }
+        document.getElementById('season').value = savedSeason;
     }
 
-    // Restaurar tipos (ONA, Movie, etc.)
-    const savedTypes = JSON.parse(localStorage.getItem('selectedTypes') || '[]');
-    document.getElementById('type-ona').checked = savedTypes.includes("ONA");
-    document.getElementById('type-movie').checked = savedTypes.includes("Movie");
-    document.getElementById('type-ova').checked = savedTypes.includes("OVA");
-    document.getElementById('type-special').checked = savedTypes.includes("Special");
+    // ────────────────────────────────────────────────
+    // Restaurar modo de puntaje
+    // ────────────────────────────────────────────────
+    const savedScoreMode = localStorage.getItem('scoreMode') || 'normal';
+    const scoreModeSelect = document.getElementById('scoreMode');
+    if (scoreModeSelect) {
+        scoreModeSelect.value = savedScoreMode;
+        currentScoreMode = savedScoreMode;
+    }
 
-    // Iniciar countdown
+    // ────────────────────────────────────────────────
+    // Restaurar tipos seleccionados (checkboxes)
+    // ────────────────────────────────────────────────
+    const savedTypes = JSON.parse(localStorage.getItem('selectedTypes') || '[]');
+
+    // Si NO hay nada guardado en localStorage → tildamos TODOS por defecto
+    if (savedTypes.length === 0) {
+        document.getElementById('type-tv').checked     = true;
+        document.getElementById('type-ona').checked    = true;
+        document.getElementById('type-movie').checked  = true;
+        document.getElementById('type-ova').checked    = true;
+        document.getElementById('type-special').checked = true;
+    } else {
+        // Restauramos exactamente lo que el usuario guardó
+        document.getElementById('type-tv').checked     = savedTypes.includes("TV");
+        document.getElementById('type-ona').checked    = savedTypes.includes("ONA");
+        document.getElementById('type-movie').checked  = savedTypes.includes("Movie");
+        document.getElementById('type-ova').checked    = savedTypes.includes("OVA");
+        document.getElementById('type-special').checked = savedTypes.includes("Special");
+    }
+
+    // ────────────────────────────────────────────────
+    // Guardar cambios en checkboxes cuando el usuario los modifique
+    // ────────────────────────────────────────────────
+    const checkboxes = [
+        'type-tv', 'type-ona', 'type-movie', 'type-ova', 'type-special'
+    ];
+    checkboxes.forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox) {
+            checkbox.addEventListener('change', () => {
+                const selected = getSelectedTypes();
+                localStorage.setItem('selectedTypes', JSON.stringify(selected));
+            });
+        }
+    });
+
+    // ────────────────────────────────────────────────
+    // Guardar temporada cuando cambie el select
+    // ────────────────────────────────────────────────
+    document.getElementById('season').addEventListener('change', function() {
+        localStorage.setItem('selectedSeason', this.value);
+    });
+
+    // Iniciar countdown (si ya hay temporada y año seleccionados)
     startCountdown();
 
-    // Guardar cambios en localStorage
-    y.addEventListener('change', () => {
-        localStorage.setItem('selectedYear', y.value);
-        startCountdown();
-    });
-
-    document.getElementById('season').addEventListener('change', () => {
-        localStorage.setItem('selectedSeason', document.getElementById('season').value);
-        startCountdown();
-    });
-
-    // Guardar cambios en checkboxes y invalidar caché si cambia
-    const checkboxes = document.querySelectorAll('.type-filters input[type="checkbox"]:not([disabled])');
-    checkboxes.forEach(chk => {
-        chk.addEventListener('change', () => {
-            const selectedTypes = [];
-            if (document.getElementById('type-ona').checked) selectedTypes.push("ONA");
-            if (document.getElementById('type-movie').checked) selectedTypes.push("Movie");
-            if (document.getElementById('type-ova').checked) selectedTypes.push("OVA");
-            if (document.getElementById('type-special').checked) selectedTypes.push("Special");
-            localStorage.setItem('selectedTypes', JSON.stringify(selectedTypes));
-
-            // Invalidar caché de la temporada actual para que se recargue con los nuevos filtros
-            const year = y.value;
-            const season = document.getElementById('season').value;
-            if (year && season) {
-                localStorage.removeItem(seasonKey(year, season));
-            }
-        });
-    });
-
+    // Opcional: si querés cargar automáticamente la temporada actual al abrir la página,
+    // podés descomentar esto (pero como pediste que NO cargue automáticamente, lo dejo comentado)
+    // loadTop10();
 };
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
