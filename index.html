@@ -807,118 +807,121 @@ async function loadTop10() {
                 renderSkeletons();
 
                 // Etapa 1: AniList → 0% a 30%
-                updateProgress(5, 'Consultando AniList...');
-                const aniList = await fetchSeasonFromAniList(year, season);
-                if (!isLoading) return; // ← Interrumpimos si se canceló
-                updateProgress(30, 'Datos de AniList obtenidos');
+updateProgress(5, 'Consultando...');
+const aniList = await fetchSeasonFromAniList(year, season);
+if (!isLoading) return;
+updateProgress(30, 'Datos obtenidos');
 
-                // ── FILTRAMOS ANTES de fetchear MAL ──
-				const candidates = aniList.filter(ani => {
-				    // Incluimos si:
-				    // 1. Tiene score en AniList (aunque sea bajo)
-				    // 2. O tiene mal_id válido (podría tener score solo en MAL)
-				    return (ani.score && ani.score > 0) || (ani.mal_id && ani.mal_id > 0);
-				});
+// ── FILTRAMOS CANDIDATOS ANTES DE FETCHEARE MAL ──
+const candidates = aniList.filter(ani => {
+    // Incluimos si:
+    // 1. Tiene score en AniList (aunque sea bajo)
+    // 2. O tiene mal_id válido (podría tener score solo en MAL)
+    // 3. O tiene score manual previo (opcional, pero útil)
+    const hasAlScore = ani.score && ani.score > 0;
+    const hasMalId   = ani.mal_id && ani.mal_id > 0;
+    const hasManual  = getManualScore(ani.mal_id) !== null;
 
-                // Etapa 2: Enriquecer con MAL → 30% a 85%
-                updateProgress(35, 'Obteniendo datos de MyAnimeList...');
+    return hasAlScore || hasMalId || hasManual;
+});
 
-                // ── SIEMPRE TODOS LOS TIPOS ── (ignoramos checkboxes)
-                const malIdsToFetch = aniList
-                    .filter(a => a.mal_id)
-                    .map(a => a.mal_id);
+updateProgress(32, `Filtrados ${candidates.length} animes con potencial score`);
 
-                const totalMal = malIdsToFetch.length;
-                let processedMal = 0;
-                const malDataById = {};
+const malIdsToFetch = candidates
+    .filter(a => a.mal_id)
+    .map(a => a.mal_id);
 
-                if (totalMal === 0) {
-                    updateProgress(85, 'No hay datos de MAL para enriquecer');
-                } else {
-                    for (const id of malIdsToFetch) {
-                        if (!isLoading) break; // ← Cancelamos si se inició otra carga
+// Ahora solo fetcheamos estos (mucho menos que el total original)
+const totalMal = malIdsToFetch.length;
+let processedMal = 0;
+const malDataById = {};
 
-                        let malData = getMalCache(id);
+if (totalMal === 0) {
+    updateProgress(85, 'No hay datos');
+} else {
+    updateProgress(35, `Obteniendo datos para ${totalMal} candidatos...`);
 
-                        if (!malData) {
-                            let attempts = 0;
-                            while (attempts < 3) {
-                                try {
-                                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
-                                    
-                                    if (res.status === 429) {
-                                        console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
-                                        await delay(5000 * (attempts + 1));
-                                        attempts++;
-                                        continue;
-                                    }
-                                    
-                                    if (res.ok) {
-                                        const data = await res.json();
-                                        malData = data.data;
-                                        saveMalCache(id, malData);
-                                        await delay(1000); // ← 1 request por segundo
-                                        break;
-                                    }
-                                    
-                                    console.warn(`Error ${res.status} en MAL ID ${id}`);
-                                    break;
-                                } catch (e) {
-                                    console.error("Error fetching MAL for", id, e);
-                                    break;
-                                }
-                                attempts++;
-                                await delay(1500);
-                            }
-                        }
+    for (const id of malIdsToFetch) {
+        if (!isLoading) break;
 
-                        if (malData) malDataById[id] = malData;
+        let malData = getMalCache(id);
 
-                        processedMal++;
-                        const malProgress = 30 + (55 * (processedMal / totalMal));
-                        updateProgress(Math.min(85, malProgress), `Procesando (${processedMal} de ${totalMal})`);
+        if (!malData) {
+            let attempts = 0;
+            while (attempts < 3) {
+                try {
+                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                    
+                    if (res.status === 429) {
+                        console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
+                        await delay(5000 * (attempts + 1));
+                        attempts++;
+                        continue;
                     }
+                    
+                    if (res.ok) {
+                        const data = await res.json();
+                        malData = data.data;
+                        saveMalCache(id, malData);
+                        await delay(1000); // 1 req/seg
+                        break;
+                    }
+                    
+                    console.warn(`Error ${res.status} en MAL ID ${id}`);
+                    break;
+                } catch (e) {
+                    console.error("Error fetching MAL for", id, e);
+                    break;
                 }
+                attempts++;
+                await delay(1500);
+            }
+        }
 
-                if (!isLoading) return;
+        if (malData) malDataById[id] = malData;
 
-                updateProgress(85, 'Datos de MAL completados');
+        processedMal++;
+        const malProgress = 30 + (55 * (processedMal / totalMal));
+        updateProgress(Math.min(85, malProgress), `Procesando (${processedMal} de ${totalMal})`);
+    }
+}
 
-                // Etapa 3: Procesar y ordenar → 85% a 98%
-                updateProgress(86, 'Combinando y ordenando ranking...');
+updateProgress(85, 'Datos completados');
 
-                const enrichedList = candidates.map(ani => {
-    			const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
+// ── Usamos candidates en vez de aniList para el resto ──
+const enrichedList = candidates.map(ani => {
+    const mal = ani.mal_id ? malDataById[ani.mal_id] : null;
 
-                    let title = null;
-                    if (mal?.title_english && mal.title_english.trim() !== '') {
-                        title = mal.title_english.trim();
-                    } else if (mal?.title && mal.title.trim() !== '') {
-                        title = mal.title.trim();
-                    } else if (ani.titles?.english) {
-                        title = ani.titles.english;
-                    } else if (ani.titles?.romaji) {
-                        title = ani.titles.romaji;
-                    } else if (ani.titles?.native) {
-                        title = ani.titles.native;
-                    } else {
-                        title = "Sin título";
-                    }
+    let title = null;
+    if (mal?.title_english && mal.title_english.trim() !== '') {
+        title = mal.title_english.trim();
+    } else if (mal?.title && mal.title.trim() !== '') {
+        title = mal.title.trim();
+    } else if (ani.titles?.english) {
+        title = ani.titles.english;
+    } else if (ani.titles?.romaji) {
+        title = ani.titles.romaji;
+    } else if (ani.titles?.native) {
+        title = ani.titles.native;
+    } else {
+        title = "Sin título";
+    }
 
-                    let imageUrl = ani.image ||
-                                   (mal?.images?.jpg?.large_image_url ||
-                                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
+    let imageUrl = ani.image ||
+                   (mal?.images?.jpg?.large_image_url ||
+                    'https://via.placeholder.com/300x450?text=Sin+Imagen');
 
-                    return {
-                        mal_id: ani.mal_id,
-                        title: title.trim() || "Sin título",
-                        image: imageUrl,
-                        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
-                        al: ani.score ? ani.score.toFixed(2) : null,
-                        al_id: ani.al_id,
-                        type: ani.format || 'Unknown'
-                    };
-                });
+    return {
+        mal_id: ani.mal_id,
+        title: title.trim() || "Sin título",
+        image: imageUrl,
+        mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
+        al: ani.score ? ani.score.toFixed(2) : null,
+        al_id: ani.al_id,
+        type: ani.format || 'Unknown'
+    };
+});
+                
 
                 updateProgress(90, 'Calculando promedios...');
 
