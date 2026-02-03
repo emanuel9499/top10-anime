@@ -56,7 +56,7 @@ button:hover { transform:translateY(-2px); box-shadow: 0 6px 20px rgba(255, 75, 
     gap:25px;
     max-width:1400px;
     margin:40px auto;
-    padding: 20px;
+    padding: 30px;
     box-sizing: border-box;
 }
 .anime-card {
@@ -74,6 +74,10 @@ button:hover { transform:translateY(-2px); box-shadow: 0 6px 20px rgba(255, 75, 
     animation: fadeUp .4s ease;
 }
 
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
 .anime-card:hover {
     transform: translateY(-10px);
@@ -226,7 +230,7 @@ button:hover { transform:translateY(-2px); box-shadow: 0 6px 20px rgba(255, 75, 
     background-size: 200% 100%;
     animation: pulse 1.5s infinite;
 }
-frames pulse {
+@keyframes pulse {
     0% { background-position:0% }
     100% { background-position:200% }
 }
@@ -235,6 +239,15 @@ frames pulse {
     display: flex;
     transition: transform 0.4s ease;
     width: 100%;
+}
+
+.grid-wrapper {
+    overflow: hidden;
+    max-width: 1400px;
+    margin: 0 auto;
+    touch-action: pan-y;
+    padding: 15px;
+    box-sizing: border-box;
 }
 
 /* La grilla empieza completamente oculta */
@@ -348,7 +361,7 @@ frames pulse {
 
 
 <!-- Navegación sobre el grid -->
-<div id="gridWrapper" style="overflow: hidden; max-width: 1400px; margin: 0 auto; touch-action: pan-y;">
+<div id="gridWrapper" class="grid-wrapper">
     <div id="gridContainer" class="grid-container" style="display: flex; transition: transform 0.4s ease; width: 100%;">
         <div id="grid" class="grid"></div>
     </div>
