@@ -6,19 +6,24 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Top 10 Animes por Temporada (MAL + AniList)</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&display=swap');
 
 body {
-    font-family: Arial, sans-serif;
-    background:#000;
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    background-attachment: fixed;
     color:#fff;
     text-align:center;
     margin:0;
     padding:20px;
 }
 h1 {
-    color:#cc0000;
+    color: #fff;
     font-size:2.6em;
-    text-shadow:0 0 10px rgba(204,0,0,.5);
+    text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    margin-bottom: 10px;
+    font-weight: 800;
+    letter-spacing: -1px;
 }
 .controls { margin:30px auto; }
 select, button {
@@ -26,15 +31,25 @@ select, button {
     font-size:1.05em;
     margin:10px;
     border-radius:8px;
-    border:2px solid #cc0000;
-    background:#111;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(5px);
     color:#fff;
+    transition: all 0.3s ease;
+}
+select:focus {
+    background: rgba(0,0,0,0.6);
+    border-color: #ff4444;
+    outline: none;
 }
 button {
     cursor:pointer;
-    background:linear-gradient(45deg,#cc0000,#ff3333);
+    background: linear-gradient(45deg, #ff416c, #ff4b2b);
+    border: none;
+    font-weight: 600;
+    box-shadow: 0 4px 15px rgba(255, 75, 43, 0.4);
 }
-button:hover { transform:scale(1.05); }
+button:hover { transform:translateY(-2px); box-shadow: 0 6px 20px rgba(255, 75, 43, 0.6); }
 .grid {
     display:grid;
     grid-template-columns:repeat(5,1fr);
@@ -43,12 +58,13 @@ button:hover { transform:scale(1.05); }
     margin:40px auto;
 }
 .anime-card {
-    background:#111;
+    position: relative;
+    background: rgba(30, 30, 30, 0.6);
+    backdrop-filter: blur(10px);
     border-radius:15px;
     padding:15px;
-    box-shadow:
-        0 0 15px rgba(204,0,0,.25),
-        0 10px 25px rgba(0,0,0,.6);
+    border: 1px solid rgba(255,255,255,0.05);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     transition:.3s;
 
     display: flex;
@@ -58,35 +74,57 @@ button:hover { transform:scale(1.05); }
 
 
 .anime-card:hover {
-    transform: translateY(-6px) scale(1.02);
+    transform: translateY(-10px);
+    background: rgba(40, 40, 40, 0.8);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.6);
 }
 .anime-card img {
     width:100%;
     border-radius:12px;
-    border:2px solid #cc0000;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
     height: 300px;
     object-fit: cover;
+    margin-bottom: 10px;
 }
 .rank {
-    font-size:2.1em;
-    font-weight:bold;
+    font-size: 1.5em;
+    font-weight: 800;
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #333;
+    border: 3px solid #222;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    z-index: 10;
 }
 .rank.gold {
-    color: gold;
-    text-shadow: 0 0 8px gold;
+    background: linear-gradient(135deg, #FFD700, #FDB931);
+    color: #000;
+    text-shadow: none;
+    border-color: #B8860B;
 }
 
 .rank.silver {
-    color: silver;
-    text-shadow: 0 0 6px silver;
+    background: linear-gradient(135deg, #E0E0E0, #BDBDBD);
+    color: #000;
+    text-shadow: none;
+    border-color: #757575;
 }
 
 .rank.bronze {
-    color: #cd7f32;
-    text-shadow: 0 0 6px #cd7f32;
+    background: linear-gradient(135deg, #CD7F32, #A0522D);
+    color: #fff;
+    text-shadow: none;
+    border-color: #8B4513;
 }
 
-.rank.red { color:#cc0000; }
+.rank.red { background: #ff4444; color: white; }
 .title {
     font-weight: bold;
     font-size: 1.05em;
@@ -112,16 +150,19 @@ button:hover { transform:scale(1.05); }
 
 .average {
     font-size:1.6em;
-    color:#ff0;
-    text-shadow:0 0 8px rgba(255,255,0,.6);
+    color: #FFD700;
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
     margin-bottom: 14px; /* espacio hacia los links */
+    font-weight: 800;
 }
 .links a {
-    color:#ff6666;
+    color: #ff8888;
     margin:0 8px;
     text-decoration:none;
+    font-weight: 600;
+    transition: color 0.2s;
 }
-.links a:hover { text-decoration:underline; }
+.links a:hover { color: #fff; text-decoration:none; }
 
 /* Edición manual */
 .al-score {
@@ -147,17 +188,17 @@ button:hover { transform:scale(1.05); }
     width: 60%;
     max-width: 800px;
     margin: 30px auto;
-    background: #222;
-    border-radius: 10px;
+    background: rgba(0,0,0,0.4);
+    border-radius: 20px;
     overflow: hidden;
-    box-shadow: 0 0 15px rgba(204,0,0,.6);
+    box-shadow: 0 0 20px rgba(0,0,0,0.3);
     display: none;
 }
 .progress-bar {
     width: 0%;
     height: 30px;
-    background: linear-gradient(90deg, #cc0000, #ff4444);
-    border-radius: 10px;
+    background: linear-gradient(90deg, #ff416c, #ff4b2b);
+    border-radius: 20px;
     transition: width 0.4s ease;
     position: relative;
 }
@@ -172,16 +213,14 @@ button:hover { transform:scale(1.05); }
 }
 
 .skeleton {
-    background:#111;
+    background: rgba(255,255,255,0.05);
     border-radius:15px;
     padding:15px;
-    box-shadow:
-        0 0 15px rgba(204,0,0,.25),
-        0 10px 25px rgba(0,0,0,.6);
+    box-shadow: none;
 
     height: 520px; /* 🔥 mismo alto que una card real */
 
-    background: linear-gradient(90deg, #111, #222, #111);
+    background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.08), rgba(255,255,255,0.02));
     background-size: 200% 100%;
     animation: pulse 1.5s infinite;
 }
@@ -290,10 +329,10 @@ frames pulse {
 
     <div style="display: flex; gap: 15px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 15px;">
         <button onclick="loadTop10()">Buscar</button>
-        <button id="prevPageBtn" onclick="prevPage()" style="background: linear-gradient(45deg, #444, #666);">
+        <button id="prevPageBtn" onclick="prevPage()" style="background: linear-gradient(45deg, #2c3e50, #4ca1af);">
         ← Anterior
     </button>
-    <button id="nextPageBtn" onclick="nextPage()" style="background: linear-gradient(45deg, #444, #666);">
+    <button id="nextPageBtn" onclick="nextPage()" style="background: linear-gradient(45deg, #2c3e50, #4ca1af);">
         Siguiente →
     </button>
     </div>
@@ -871,7 +910,7 @@ if (totalMal === 0) {
             let attempts = 0;
             while (attempts < 3) {
                 try {
-                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/full`);
+                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}`);
                     
                     if (res.status === 429) {
                         console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
@@ -884,7 +923,7 @@ if (totalMal === 0) {
                         const data = await res.json();
                         malData = data.data;
                         saveMalCache(id, malData);
-                        await delay(1000); // 1 req/seg
+                        await delay(350); // ~3 req/seg (Jikan limit)
                         break;
                     }
                     
