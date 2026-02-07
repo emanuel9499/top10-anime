@@ -843,6 +843,38 @@ function saveMalCache(id, data) {
     }));
 }
 
+// Nueva función: Obtiene toda la temporada de Jikan en pocas peticiones (Bulk)
+async function fetchJikanSeason(year, season) {
+    const jikanSeason = season.toLowerCase();
+    let page = 1;
+    let hasNext = true;
+    const results = {};
+    
+    while (hasNext && isLoading) {
+        try {
+            const res = await fetch(`https://api.jikan.moe/v4/seasons/${year}/${jikanSeason}?page=${page}`);
+            if (res.status === 429) {
+                await delay(2000);
+                continue;
+            }
+            if (!res.ok) break;
+
+            const data = await res.json();
+            (data.data || []).forEach(anime => {
+                results[anime.mal_id] = anime;
+                saveMalCache(anime.mal_id, anime);
+            });
+
+            hasNext = data.pagination?.has_next_page;
+            page++;
+            await delay(600); // Delay pequeño es suficiente para paginación
+        } catch (e) {
+            console.error("Jikan Season Error", e);
+            break;
+        }
+    }
+    return results;
+}
 
 // ────────────────────────────────────────────────
 // loadTop10() COMPLETA - Versión corregida y robusta
@@ -902,64 +934,10 @@ const candidates = aniList.filter(ani => {
 
 updateProgress(32, `Filtrados ${candidates.length} animes con potencial score`);
 
-const malIdsToFetch = candidates
-    .filter(a => a.mal_id)
-    .map(a => a.mal_id);
-
-// Ahora solo fetcheamos estos (mucho menos que el total original)
-const totalMal = malIdsToFetch.length;
-let processedMal = 0;
-const malDataById = {};
-
-if (totalMal === 0) {
-    updateProgress(85, 'No hay datos');
-} else {
-    updateProgress(35, `Obteniendo datos para ${totalMal} candidatos...`);
-
-    for (const id of malIdsToFetch) {
-        if (!isLoading) break;
-
-        let malData = getMalCache(id);
-
-        if (!malData) {
-            let attempts = 0;
-            while (attempts < 3) {
-                try {
-                    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}`);
-                    
-                    if (res.status === 429) {
-                        console.warn(`429 en MAL ID ${id} → esperando ${5 * (attempts + 1)}s`);
-                        await delay(5000 * (attempts + 1));
-                        attempts++;
-                        continue;
-                    }
-                    
-                    if (res.ok) {
-                        const data = await res.json();
-                        malData = data.data;
-                        saveMalCache(id, malData);
-                        await delay(850); // ~3 req/seg (Jikan limit)
-                        break;
-                    }
-                    
-                    console.warn(`Error ${res.status} en MAL ID ${id}`);
-                    break;
-                } catch (e) {
-                    console.error("Error fetching MAL for", id, e);
-                    break;
-                }
-                attempts++;
-                await delay(1500);
-            }
-        }
-
-        if (malData) malDataById[id] = malData;
-
-        processedMal++;
-        const malProgress = 30 + (55 * (processedMal / totalMal));
-        updateProgress(Math.min(85, malProgress), `Procesando...`);
-    }
-}
+// ── OPTIMIZACIÓN: Usamos fetchJikanSeason en lugar de pedir 1 por 1 ──
+updateProgress(35, `Obteniendo datos de MAL (modo optimizado)...`);
+const malDataById = await fetchJikanSeason(year, season);
+if (!isLoading) return;
 
 updateProgress(85, 'Datos completados');
 
