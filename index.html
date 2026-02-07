@@ -938,7 +938,7 @@ if (totalMal === 0) {
                         const data = await res.json();
                         malData = data.data;
                         saveMalCache(id, malData);
-                        await delay(400); // ~3 req/seg (Jikan limit)
+                        await delay(850); // ~3 req/seg (Jikan limit)
                         break;
                     }
                     
