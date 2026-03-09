@@ -353,6 +353,13 @@ button:hover { transform:translateY(-2px); box-shadow: 0 6px 20px rgba(255, 75, 
     </div>
 </div>
 
+<!-- Contenedor de estadísticas -->
+<div id="statsContainer" style="margin: 20px auto; font-size: 1.1em; color: #ccc; min-height: 1.5em; display: none; background: rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 8px; max-width: 600px; box-sizing: border-box;">
+    Promedio Top 10: <span id="top10Avg" style="font-weight: bold; color: #FFD700;">--</span> |
+    Promedio Total (<span id="totalCount" style="font-weight: bold;">0</span> animes): <span id="totalAvg" style="font-weight: bold; color: #fff;">--</span>
+</div>
+
+
 <div id="progressContainer" class="progress-container">
     <div id="progressBar" class="progress-bar">
         <div id="progressText" class="progress-text">0%</div>
@@ -895,6 +902,9 @@ async function fetchJikanSeason(year, season) {
 // ────────────────────────────────────────────────
 async function loadTop10() {
 
+    // Ocultar estadísticas al iniciar una nueva búsqueda
+    document.getElementById('statsContainer').style.display = 'none';
+
 
 	grid.classList.remove('loaded');   // Ocultamos inmediatamente la grilla anterior
     // Opcional: limpiar skeletons viejos si los tenés
@@ -1088,6 +1098,7 @@ const enrichedList = candidates.map(ani => {
 
             currentPage = 1;
             grid.innerHTML = '';
+            updateStats(); // Actualizar estadísticas
             renderPage(pageToRender);
             currentPage = pageToRender;
             updatePageButtons();
@@ -1281,6 +1292,33 @@ function nextPage() {
 function updatePageButtons() {
     document.getElementById('prevPageBtn').disabled = currentPage === 1;
     document.getElementById('nextPageBtn').disabled = currentPage * itemsPerPage >= seasonRanking.length;
+}
+
+// Calcula y muestra los promedios de puntajes
+function updateStats() {
+    const statsContainer = document.getElementById('statsContainer');
+    const top10AvgEl = document.getElementById('top10Avg');
+    const totalAvgEl = document.getElementById('totalAvg');
+    const totalCountEl = document.getElementById('totalCount');
+
+    if (!seasonRanking || seasonRanking.length === 0) {
+        statsContainer.style.display = 'none';
+        return;
+    }
+
+    // Calcular promedio del Top 10
+    const top10 = seasonRanking.slice(0, 10);
+    const top10Sum = top10.reduce((sum, anime) => sum + parseFloat(anime.avg), 0);
+    const top10Average = top10.length > 0 ? (top10Sum / top10.length).toFixed(2) : 'N/A';
+
+    // Calcular promedio total
+    const totalSum = seasonRanking.reduce((sum, anime) => sum + parseFloat(anime.avg), 0);
+    const totalAverage = seasonRanking.length > 0 ? (totalSum / seasonRanking.length).toFixed(2) : 'N/A';
+
+    top10AvgEl.textContent = top10Average;
+    totalAvgEl.textContent = totalAverage;
+    totalCountEl.textContent = seasonRanking.length;
+    statsContainer.style.display = 'block';
 }
 
 // ────────────────────────────────────────────────
