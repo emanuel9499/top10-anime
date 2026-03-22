@@ -1157,6 +1157,13 @@ const enrichedList = candidates.map(ani => {
                    (mal?.images?.jpg?.large_image_url ||
                     'https://via.placeholder.com/300x450?text=Sin+Imagen');
 
+    // Normalizar formato a título (AniList devuelve mayúsculas: "MOVIE" → "Movie")
+    const formatMap = { TV: 'TV', ONA: 'ONA', MOVIE: 'Movie', OVA: 'OVA', SPECIAL: 'Special', MUSIC: 'Music' };
+    const typeLabel = formatMap[ani.format] || ani.format || null;
+
+    // Episodios: preferir MAL (más completo para series en curso), fallback AniList
+    const episodes = mal?.episodes || ani.episodes || null;
+
     return {
         mal_id: ani.mal_id,
         title: title.trim() || "Sin título",
@@ -1164,7 +1171,8 @@ const enrichedList = candidates.map(ani => {
         mal: mal?.score ? parseFloat(mal.score.toFixed(2)) : null,
         al: ani.score ? ani.score.toFixed(2) : null,
         al_id: ani.al_id,
-        type: ani.format || 'Unknown'
+        type: typeLabel,
+        episodes: episodes
     };
 });
                 
@@ -1196,7 +1204,9 @@ const enrichedList = candidates.map(ani => {
                             al: alNum != null ? alNum.toFixed(2) : 'N/A',
                             avg: avgNum.toFixed(2),
                             mal_id: ani.mal_id,
-                            al_id: ani.al_id
+                            al_id: ani.al_id,
+                            type: ani.type || null,
+                            episodes: ani.episodes || null
                         };
                     })
                     .filter(anime => anime !== null);
