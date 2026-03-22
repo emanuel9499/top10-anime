@@ -170,6 +170,82 @@ button:hover { transform:translateY(-2px); box-shadow: 0 6px 20px rgba(255, 75, 
 }
 .links a:hover { color: #fff; text-decoration:none; }
 
+/* Tipo y episodios */
+.anime-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 4px 0 6px;
+    justify-content: center;
+}
+.badge {
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.03em;
+}
+.badge-type {
+    background: rgba(255, 65, 108, 0.25);
+    border: 1px solid rgba(255, 65, 108, 0.5);
+    color: #ff9999;
+}
+.badge-eps {
+    background: rgba(100, 180, 255, 0.15);
+    border: 1px solid rgba(100, 180, 255, 0.35);
+    color: #99ccff;
+}
+
+/* Búsqueda */
+.search-bar {
+    display: none;
+    margin: 10px auto 0;
+    max-width: 500px;
+    position: relative;
+}
+.search-bar.visible {
+    display: block;
+}
+.search-bar input {
+    width: 100%;
+    padding: 10px 40px 10px 16px;
+    font-size: 1em;
+    font-family: 'Poppins', sans-serif;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    color: #fff;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.search-bar input:focus {
+    border-color: #ff4444;
+}
+.search-bar input::placeholder { color: #888; }
+.search-clear {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #888;
+    font-size: 1.1em;
+    display: none;
+    background: none;
+    border: none;
+    padding: 0;
+    line-height: 1;
+    box-shadow: none;
+}
+.search-clear:hover { color: #fff; transform: translateY(-50%); box-shadow: none; }
+.search-no-results {
+    color: #aaa;
+    font-size: 1.1em;
+    margin: 40px auto;
+    display: none;
+}
+
 /* Edición manual */
 .al-score {
     cursor: pointer;
@@ -354,11 +430,28 @@ button:hover { transform:translateY(-2px); box-shadow: 0 6px 20px rgba(255, 75, 
 </div>
 
 <!-- Contenedor de estadísticas -->
-<div id="statsContainer" style="margin: 20px auto; font-size: 1.1em; color: #ccc; min-height: 1.5em; display: none; background: rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 8px; max-width: 600px; box-sizing: border-box;">
-    Promedio Top 10: <span id="top10Avg" style="font-weight: bold; color: #FFD700;">--</span> |
+<div id="statsContainer" style="margin: 20px auto; font-size: 1.1em; color: #ccc; min-height: 1.5em; display: none; background: rgba(0,0,0,0.2); padding: 14px 20px; border-radius: 8px; max-width: 700px; box-sizing: border-box; line-height: 2em;">
+    Promedio Top 10: <span id="top10Avg" style="font-weight: bold; color: #FFD700;">--</span> &nbsp;|&nbsp;
     Promedio Total (<span id="totalCount" style="font-weight: bold;">0</span> animes): <span id="totalAvg" style="font-weight: bold; color: #fff;">--</span>
+    <br>
+    <label style="color: #ccc; font-size: 0.95em;">
+        Promedio Top&nbsp;
+        <input id="topNInput" type="number" min="1" value="10"
+            style="width:60px; padding:4px 6px; font-size:1em; background:#222; color:#fff;
+                   border:1px solid #555; border-radius:6px; text-align:center;"
+            oninput="updateTopN()">
+        &nbsp;animes:&nbsp;<span id="topNAvg" style="font-weight: bold; color: #ff9966;">--</span>
+        <span id="topNNote" style="font-size:0.8em; color:#888; margin-left:6px;"></span>
+    </label>
 </div>
 
+
+<!-- Búsqueda por nombre -->
+<div id="searchBar" class="search-bar">
+    <input type="text" id="searchInput" placeholder="Filtrar por nombre…" oninput="applySearch()" autocomplete="off">
+    <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
+</div>
+<div id="searchNoResults" class="search-no-results">No se encontraron animes con ese nombre.</div>
 
 <div id="progressContainer" class="progress-container">
     <div id="progressBar" class="progress-bar">
@@ -722,72 +815,123 @@ function renderCard(anime, index) {
     const card = document.createElement('div');
     card.className = 'anime-card';
     const rankClass =
-    index === 0 ? 'gold' :
-    index === 1 ? 'silver' :
-    index === 2 ? 'bronze' :
-    'red';
+        index === 0 ? 'gold' :
+        index === 1 ? 'silver' :
+        index === 2 ? 'bronze' :
+        'red';
 
     // Score AniList: automático, manual o N/A
     let alScore = anime.al;
-    if (!alScore) {
-        alScore = getManualScore(anime.mal_id);
+    if (!alScore || alScore === 'N/A') {
+        const manual = getManualScore(anime.mal_id);
+        if (manual) alScore = manual;
     }
     const hasAlId = anime.al_id !== undefined;
-    const finalAlScore = alScore || 'N/A';
-   
 
+    // Valores numéricos para cálculos y formateo
+    const malVal = anime.mal !== 'N/A' && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
+    const alVal  = alScore && alScore !== 'N/A' && !isNaN(parseFloat(alScore)) ? parseFloat(alScore) : null;
 
-    // Promedio actualizado con score manual si existe
-let malScore = anime.mal != null && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
-let alFinal  = alScore != null ? parseFloat(alScore) : null;
+    let avgNum = 0, sourcesCount = 0;
+    if (malVal !== null) { avgNum += malVal; sourcesCount++; }
+    if (alVal  !== null) { avgNum += alVal;  sourcesCount++; }
+    const avgRaw = sourcesCount > 0 ? avgNum / sourcesCount : null;
 
-let avgNum = 0;
-let count = 0;
-if (malScore != null) { avgNum += malScore; count++; }
-if (alFinal  != null) { avgNum += alFinal;  count++; }
+    // Formateador respeta el modo actual (normal / porcentual)
+    const format = (num) => {
+        if (num === null || num === undefined) return 'N/A';
+        return currentScoreMode === 'percent'
+            ? (num * 10).toFixed(2) + '%'
+            : num.toFixed(2);
+    };
 
-const avg = count === 2 ? (avgNum / 2).toFixed(2) :
-            count === 1 ? avgNum.toFixed(2) :
-            'N/A';
+    // Badges de tipo y episodios
+    const typeLabel = anime.type && anime.type !== 'Unknown' ? anime.type : null;
+    const epsLabel  = anime.episodes ? `${anime.episodes} ep` : null;
+    const metaHTML  = (typeLabel || epsLabel) ? `
+        <div class="anime-meta">
+            ${typeLabel ? `<span class="badge badge-type">${typeLabel}</span>` : ''}
+            ${epsLabel  ? `<span class="badge badge-eps">${epsLabel}</span>`   : ''}
+        </div>` : '';
+
+    // Render del score AniList
+    const alDisplay = alVal !== null
+        ? `<span>${format(alVal)}</span>`
+        : hasAlId
+            ? `<span class="al-score" onclick="editAlScore(${anime.mal_id}, this)">N/A (editar)</span>`
+            : `<span>N/A</span>`;
 
     card.innerHTML = `
-    <div class="rank ${rankClass}">#${index + 1}</div>
-    <img src="${anime.image}">
-    <div class="title">${anime.title}</div>
-    <div class="scores">
-        MAL: ${anime.mal} |
-        AniList: 
-        ${alScore 
-            ? `<span>${alScore}</span>`
-            : hasAlId 
-                ? `<span class="al-score" onclick="editAlScore(${anime.mal_id}, this)">${finalAlScore} (editar)</span>`
-                : `<span>${finalAlScore}</span>`
-        }
-        
-    </div>
-    <div class="bottom">
-    <div class="average">⭐ ${avg}</div>
-    <div class="links">
-        <a href="https://myanimelist.net/anime/${anime.mal_id}" target="_blank">MAL</a>
-        ${hasAlId ? `<a href="https://anilist.co/anime/${anime.al_id}" target="_blank">AniList</a>` : ''}
-    </div>
-</div>
-`;
+        <div class="rank ${rankClass}">#${index + 1}</div>
+        <img src="${anime.image}" loading="lazy">
+        <div class="title">${anime.title}</div>
+        ${metaHTML}
+        <div class="scores">
+            MAL: ${format(malVal)} | AniList: ${alDisplay}
+        </div>
+        <div class="bottom">
+            <div class="average">&#11088; ${format(avgRaw)}</div>
+            <div class="links">
+                <a href="https://myanimelist.net/anime/${anime.mal_id}" target="_blank">MAL</a>
+                ${hasAlId ? `<a href="https://anilist.co/anime/${anime.al_id}" target="_blank">AniList</a>` : ''}
+            </div>
+        </div>
+    `;
 
     grid.appendChild(card);
 }
 
+// Lista filtrada por búsqueda (null = sin filtro activo)
+let filteredRanking = null;
+
+function getActiveRanking() {
+    return filteredRanking !== null ? filteredRanking : seasonRanking;
+}
+
 function renderPage(page) {
-    if (!seasonRanking.length) return;
+    const ranking = getActiveRanking();
+    if (!ranking.length) return;
     const start = (page - 1) * itemsPerPage;
-    const end = start + itemsPerPage;
-    const pageItems = seasonRanking.slice(start, end);
+    const end   = start + itemsPerPage;
+    const pageItems = ranking.slice(start, end);
 
     grid.innerHTML = '';
     pageItems.forEach((anime, i) => renderCard(anime, start + i));
 
     updatePageButtons();
 }
+
+// ── Búsqueda por nombre ──────────────────────────────────────────
+function applySearch() {
+    const input = document.getElementById('searchInput');
+    const clearBtn = document.getElementById('searchClear');
+    const noResults = document.getElementById('searchNoResults');
+    const query = input.value.trim().toLowerCase();
+
+    clearBtn.style.display = query ? 'block' : 'none';
+
+    if (!query) {
+        filteredRanking = null;
+    } else {
+        filteredRanking = seasonRanking.filter(a =>
+            a.title.toLowerCase().includes(query)
+        );
+    }
+
+    const ranking = getActiveRanking();
+    noResults.style.display = (query && ranking.length === 0) ? 'block' : 'none';
+
+    currentPage = 1;
+    grid.innerHTML = '';
+    if (ranking.length > 0) renderPage(1);
+    updatePageButtons();
+}
+
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    applySearch();
+}
+// ─────────────────────────────────────────────────────────────────
 
 // Función global para editar score
 function editAlScore(malId, element) {
@@ -1083,15 +1227,19 @@ const enrichedList = candidates.map(ani => {
             } else {
                 // Desde caché
                 seasonRanking = seasonData;
-                updateProgress(40);
-                await delay(200);
-                updateProgress(70, 'Cargando desde caché...');
-                await delay(300);
-                updateProgress(100, '¡Listo!');
+                updateProgress(100, '¡Cargado desde caché!');
                 setTimeout(() => progressContainer.style.display = 'none', 400);
             }
 
             if (!isLoading) return; // No renderizamos si se canceló
+
+            // Resetear búsqueda al cargar nueva temporada
+            filteredRanking = null;
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) searchInput.value = '';
+            document.getElementById('searchClear').style.display = 'none';
+            document.getElementById('searchNoResults').style.display = 'none';
+            document.getElementById('searchBar').classList.add('visible');
 
             // Guardamos la página actual antes de renderizar
             const pageToRender = currentPage;
@@ -1211,58 +1359,6 @@ scoreModeSelect?.addEventListener('change', function() {
     }
 });
 
-// Override seguro de renderCard (se define DESPUÉS de la función original)
-// Override seguro de renderCard
-const originalRenderCard = renderCard;
-renderCard = function(anime, index) {
-    originalRenderCard(anime, index);
-
-    const card = grid.lastElementChild;
-    if (!card) return;
-
-    const malTextNode = card.querySelector('.scores').childNodes[0]; // "MAL: xx.xx | "
-    const alElement   = card.querySelector('.scores span');
-    const avgElement  = card.querySelector('.average');
-
-    // Valores seguros (igual que en processed y renderCard original)
-    // Valores seguros
-const malVal = anime.mal !== 'N/A' && !isNaN(parseFloat(anime.mal)) ? parseFloat(anime.mal) : null;
-const alVal  = anime.al  !== 'N/A' && !isNaN(parseFloat(anime.al))  ? parseFloat(anime.al)  : null;
-
-// Promedio
-let avgNum = 0;
-let sources = 0;
-if (malVal !== null) { avgNum += malVal; sources++; }
-if (alVal  !== null) { avgNum += alVal;  sources++; }
-
-const avgRaw = sources === 2 ? avgNum / 2 :
-               sources === 1 ? avgNum :
-               null;
-
-// Formateador (ahora maneja N/A correctamente)
-const format = (num) => {
-    if (num === null) return 'N/A';
-    const formatted = currentScoreMode === 'percent'
-        ? (num * 10).toFixed(2) + '%'
-        : num.toFixed(2);
-    return formatted;
-};
-
-// Actualizar textos
-if (malTextNode) {
-    malTextNode.textContent = `MAL: ${format(malVal)} | AniList: `;
-}
-if (alElement) {
-    alElement.textContent = format(alVal);
-    if (alElement.classList.contains('al-score') && alVal === null) {
-        alElement.textContent = 'N/A (editar)';
-    }
-}
-if (avgElement) {
-    avgElement.textContent = `⭐ ${format(avgRaw)}`;
-}
-};
-// FIN NUEVO (versión corregida)
 // ────────────────────────────────────────────────
 function getSelectedTypes() {
     const types = [];
@@ -1282,16 +1378,11 @@ function prevPage() {
 }
 
 function nextPage() {
-    if (currentPage * itemsPerPage < seasonRanking.length) {
+    if (currentPage * itemsPerPage < getActiveRanking().length) {
         currentPage++;
         renderPage(currentPage);
         updatePageButtons();
     }
-}
-
-function updatePageButtons() {
-    document.getElementById('prevPageBtn').disabled = currentPage === 1;
-    document.getElementById('nextPageBtn').disabled = currentPage * itemsPerPage >= seasonRanking.length;
 }
 
 // Calcula y muestra los promedios de puntajes
@@ -1319,6 +1410,48 @@ function updateStats() {
     totalAvgEl.textContent = totalAverage;
     totalCountEl.textContent = seasonRanking.length;
     statsContainer.style.display = 'block';
+
+    // Inicializar el input topN respetando el total disponible
+    const topNInput = document.getElementById('topNInput');
+    if (topNInput) {
+        topNInput.max = seasonRanking.length;
+        // Si el valor actual excede el total, lo ajustamos
+        if (parseInt(topNInput.value) > seasonRanking.length) {
+            topNInput.value = seasonRanking.length;
+        }
+        updateTopN();
+    }
+}
+
+// Calcula el promedio para el Top N elegido por el usuario
+function updateTopN() {
+    if (!seasonRanking || seasonRanking.length === 0) return;
+
+    const topNInput = document.getElementById('topNInput');
+    const topNAvgEl = document.getElementById('topNAvg');
+    const topNNote  = document.getElementById('topNNote');
+
+    let n = parseInt(topNInput.value);
+    const total = seasonRanking.length;
+
+    // Validar rango
+    if (isNaN(n) || n < 1) {
+        n = 1;
+        topNInput.value = 1;
+    }
+    if (n > total) {
+        n = total;
+        topNInput.value = total;
+        topNNote.textContent = `(máx. ${total} en esta temporada)`;
+    } else {
+        topNNote.textContent = '';
+    }
+
+    const slice = seasonRanking.slice(0, n);
+    const sum = slice.reduce((acc, anime) => acc + parseFloat(anime.avg), 0);
+    const avg = (sum / slice.length).toFixed(2);
+
+    topNAvgEl.textContent = avg;
 }
 
 // ────────────────────────────────────────────────
@@ -1368,13 +1501,14 @@ document.addEventListener('keydown', e => {
 
 // Actualizamos la clase active para que el swipe funcione solo cuando hay más de una página
 function updatePageButtons() {
+    const total = getActiveRanking().length;
     document.getElementById('prevPageBtn').disabled = currentPage === 1;
-    document.getElementById('nextPageBtn').disabled = currentPage * itemsPerPage >= seasonRanking.length;
+    document.getElementById('nextPageBtn').disabled = currentPage * itemsPerPage >= total;
 
     // En móvil mostramos visualmente si hay más páginas (opcional)
     if (window.innerWidth <= 768) {
         gridWrapper.classList.toggle('has-prev', currentPage > 1);
-        gridWrapper.classList.toggle('has-next', currentPage * itemsPerPage < seasonRanking.length);
+        gridWrapper.classList.toggle('has-next', currentPage * itemsPerPage < total);
     }
 }
 
