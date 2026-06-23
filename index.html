@@ -1042,11 +1042,28 @@ function getMalCache(id) {
     return parsed.data;
 }
 
+function cleanupMalCache() {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('MAL_FULL_'));
+    if (keys.length <= 100) return;
+    keys.map(k => {
+        try { return { key: k, ts: JSON.parse(localStorage.getItem(k)).timestamp || 0 }; }
+        catch { localStorage.removeItem(k); return null; }
+    }).filter(Boolean)
+      .sort((a, b) => a.ts - b.ts)
+      .slice(0, keys.length - 100)
+      .forEach(e => localStorage.removeItem(e.key));
+}
+
 function saveMalCache(id, data) {
-    localStorage.setItem(`MAL_FULL_${id}`, JSON.stringify({
-        timestamp: Date.now(),
-        data
-    }));
+    cleanupMalCache();
+    const value = JSON.stringify({ timestamp: Date.now(), data });
+    try {
+        localStorage.setItem(`MAL_FULL_${id}`, value);
+    } catch (e) {
+        Object.keys(localStorage).filter(k => k.startsWith('MAL_FULL_')).forEach(k => localStorage.removeItem(k));
+        try { localStorage.setItem(`MAL_FULL_${id}`, value); }
+        catch (e2) { console.warn('No se pudo cachear MAL_FULL_' + id); }
+    }
 }
 
 // Nueva función para buscar un solo anime si falla el bulk
