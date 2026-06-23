@@ -623,14 +623,31 @@ function getSeasonCache(key) {
 }
 
 function saveSeasonCache(key, data) {
-    localStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), lastUsed: Date.now(), data }));
-    cleanupCache();
+    cleanupCache(); // limpiar primero, antes de intentar escribir
+    const value = JSON.stringify({ timestamp: Date.now(), lastUsed: Date.now(), data });
+    try {
+        localStorage.setItem(key, value);
+    } catch (e) {
+        // Si sigue sin entrar (quota), borrar todas las temporadas cacheadas y reintentar
+        Object.keys(localStorage)
+            .filter(k => k.startsWith('SEASON_'))
+            .forEach(k => localStorage.removeItem(k));
+        try {
+            localStorage.setItem(key, value);
+        } catch (e2) {
+            console.warn('No se pudo cachear la temporada (quota lleno):', key);
+        }
+    }
 }
 
 function cleanupCache() {
     const seasons = Object.keys(localStorage)
         .filter(k => k.startsWith('SEASON_'))
-        .map(k => ({ key: k, ...JSON.parse(localStorage.getItem(k)) }));
+        .map(k => {
+            try { return { key: k, ...JSON.parse(localStorage.getItem(k)) }; }
+            catch { localStorage.removeItem(k); return null; }
+        })
+        .filter(Boolean);
     if (seasons.length <= MAX_SEASONS_CACHED) return;
     seasons.sort((a, b) => a.lastUsed - b.lastUsed)
         .slice(0, seasons.length - MAX_SEASONS_CACHED)
