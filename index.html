@@ -1085,17 +1085,29 @@ async function fetchJikanSeason(year, season) {
     const jikanSeason = season.toLowerCase();
     let page = 1;
     let hasNext = true;
+    let retriesOnPage = 0;
+    const MAX_RETRIES_PER_PAGE = 4; // tras esto, abandonamos el bulk y confiamos en el fallback individual
     const results = {};
-    
+
     while (hasNext && isLoading) {
         try {
             const res = await fetch(`https://api.jikan.moe/v4/seasons/${year}/${jikanSeason}?page=${page}`);
+
             if (res.status === 429 || res.status >= 500) {
-                await delay(2000);
+                retriesOnPage++;
+                if (retriesOnPage > MAX_RETRIES_PER_PAGE) {
+                    console.warn(`Jikan Season: abandonando página ${page} tras ${MAX_RETRIES_PER_PAGE} reintentos (status ${res.status})`);
+                    break; // Cortamos el bulk; loadTop10 completará lo que falte con fetchMalById 1 a 1
+                }
+                if (typeof updateProgress === 'function') {
+                    updateProgress(35, `MAL no responde, reintentando (${retriesOnPage}/${MAX_RETRIES_PER_PAGE})...`);
+                }
+                await delay(1500 * retriesOnPage); // backoff progresivo: 1.5s, 3s, 4.5s, 6s
                 continue;
             }
             if (!res.ok) break;
 
+            retriesOnPage = 0; // la página cargó bien, reseteamos el contador para la siguiente
             const data = await res.json();
             (data.data || []).forEach(anime => {
                 results[anime.mal_id] = anime;
@@ -1205,6 +1217,11 @@ if (missingIds.length > 0) {
 }
 
 updateProgress(90, 'Datos completados');
+
+if (Object.keys(malDataById).length === 0 && candidates.length > 0) {
+    console.warn('MAL (Jikan) no devolvió datos para esta temporada; se continuará solo con AniList.');
+    updateProgress(90, 'MAL no disponible, usando solo AniList...');
+}
 
 // ── Usamos candidates en vez de aniList para el resto ──
 const enrichedList = candidates.map(ani => {
