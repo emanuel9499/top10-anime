@@ -126,31 +126,6 @@ button:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(255, 75,
     box-sizing: border-box;
 }
 
-/* ── Search bar compacta ── */
-.search-bar {
-    display: none;
-    margin: 4px auto;
-    max-width: 380px;
-    position: relative;
-}
-.search-bar.visible { display: block; }
-.search-bar input {
-    width: 100%;
-    padding: 5px 32px 5px 12px;
-    font-size: 0.88em;
-    font-family: 'Poppins', sans-serif;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 8px;
-    color: #fff;
-    box-sizing: border-box;
-    outline: none;
-    transition: border-color 0.2s;
-    height: 30px;
-}
-.search-bar input:focus { border-color: #ff4444; }
-.search-bar input::placeholder { color: #888; }
-
 /* ── Grid compacta ── */
 .grid {
     display: grid;
@@ -288,6 +263,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(255, 75,
     box-sizing: border-box;
     outline: none;
     transition: border-color 0.2s;
+    height: 30px;
 }
 .search-bar input:focus {
     border-color: #ff4444;
@@ -512,7 +488,6 @@ button:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(255, 75,
 <script>
 const CACHE_TTL = 4 * 60 * 60 * 1000;     // 4 horas
 const MAX_SEASONS_CACHED = 25;
-const BATCH_SIZE = 15;
 
 const grid = document.getElementById('grid');
 const progressContainer = document.getElementById('progressContainer');
@@ -654,46 +629,6 @@ function cleanupCache() {
         .forEach(s => localStorage.removeItem(s.key));
 }
 
-// Consulta rápida a AniList por un solo MAL ID (ponela ANTES de fetchSeasonMAL)
-async function getAniListSeason(malId) {
-    const query = `
-    query ($idMal: Int) {
-      Media(idMal: $idMal, type: ANIME) {
-        season
-        seasonYear
-        startDate {
-          year
-          month
-          day
-        }
-      }
-    }`;
-
-    try {
-        const res = await fetch('https://graphql.anilist.co', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, variables: { idMal: malId } })
-        });
-
-        if (!res.ok) return null;
-
-        const data = await res.json();
-        const media = data.data?.Media;
-
-        if (!media) return null;
-
-        return {
-            season: media.season,
-            seasonYear: media.seasonYear,
-            startYear: media.startDate?.year
-        };
-    } catch (e) {
-        console.error('Error fetching AniList season for MAL ID', malId, e);
-        return null;
-    }
-}
-
 async function fetchSeasonFromAniList(year, season) {
     const allowedFormats = getSelectedTypes().map(t => {
         switch (t) {
@@ -730,37 +665,37 @@ query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: I
   }
 }`;
 
-    let allMedia = [];
-    let page = 1;
-    let hasNext = true;
-
-    while (hasNext && allMedia.length < 60) {
+    async function fetchPage(p) {
         try {
             const res = await fetch('https://graphql.anilist.co', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     query,
-                    variables: { seasonYear: year, season: aniSeason, formats: allowedFormats, page }
+                    variables: { seasonYear: year, season: aniSeason, formats: allowedFormats, page: p }
                 })
             });
-
-            if (!res.ok) break;
-
+            if (!res.ok) return [];
             const { data } = await res.json();
-            const pageData = data?.Page;
-
-            if (!pageData?.media) break;
-
-            allMedia.push(...pageData.media);
-            hasNext = pageData.pageInfo.hasNextPage;
-            page++;
-            await delay(400); // Rate limit AniList ~90/min, mejor ser conservador
+            return data?.Page?.media || [];
         } catch (e) {
             console.error("Error fetching AniList season", e);
-            break;
+            return [];
         }
     }
+
+    // Ambas páginas en paralelo (este ranking nunca necesita más de 2 consultas)
+    const [page1, page2] = await Promise.all([fetchPage(1), fetchPage(2)]);
+
+    // Combinar sin duplicados, mismo resultado que la paginación secuencial
+    const seenIds = new Set();
+    const allMedia = [];
+    [...page1, ...page2].forEach(m => {
+        if (m && !seenIds.has(m.id)) {
+            seenIds.add(m.id);
+            allMedia.push(m);
+        }
+    });
 
     // Ordenar por score descendente (aunque ya pedimos sort)
     allMedia.sort((a, b) => (b.averageScore || 0) - (a.averageScore || 0));
@@ -780,64 +715,6 @@ query ($seasonYear: Int, $season: MediaSeason, $formats: [MediaFormat], $page: I
     al_id: m.id
 }));
 
-}
-
-
-async function fetchAniListBatch(malIds) {
-    const results = {};
-    const missingIds = [];
-
-    malIds.forEach(malId => {
-        const cacheKey = `AL_MAL_${malId}`;
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-            results[malId] = JSON.parse(cached);
-        } else {
-            missingIds.push(malId);
-        }
-    });
-
-    if (missingIds.length === 0) return results;
-
-    const query = `
-    query ($ids: [Int]) {
-      Page {
-        media(idMal_in: $ids, type: ANIME) {
-          id
-          idMal
-          averageScore
-        }
-      }
-    }`;
-
-    const batches = [];
-    for (let i = 0; i < missingIds.length; i += BATCH_SIZE) {
-        batches.push(missingIds.slice(i, i + BATCH_SIZE));
-    }
-
-    for (const batch of batches) {
-        const variables = { ids: batch };
-        const res = await fetch('https://graphql.anilist.co', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, variables })
-        });
-        if (!res.ok) continue;
-        const data = await res.json();
-        const mediaList = data.data.Page?.media || [];
-        mediaList.forEach(media => {
-            const result = {
-                id: media.id,
-                score: media.averageScore ? (media.averageScore / 10).toFixed(2) : null
-            };
-            const cacheKey = `AL_MAL_${media.idMal}`;
-            localStorage.setItem(cacheKey, JSON.stringify(result));
-            results[media.idMal] = result;
-        });
-        await delay(1000);
-    }
-
-    return results;
 }
 
 
@@ -1054,8 +931,7 @@ function cleanupMalCache() {
       .forEach(e => localStorage.removeItem(e.key));
 }
 
-function saveMalCache(id, data) {
-    cleanupMalCache();
+function writeMalCache(id, data) {
     const value = JSON.stringify({ timestamp: Date.now(), data });
     try {
         localStorage.setItem(`MAL_FULL_${id}`, value);
@@ -1064,6 +940,17 @@ function saveMalCache(id, data) {
         try { localStorage.setItem(`MAL_FULL_${id}`, value); }
         catch (e2) { console.warn('No se pudo cachear MAL_FULL_' + id); }
     }
+}
+
+function saveMalCache(id, data) {
+    cleanupMalCache();
+    writeMalCache(id, data);
+}
+
+// Guarda muchas entradas con una sola pasada de limpieza (evita O(n²))
+function saveMalCacheBulk(entries) {
+    cleanupMalCache();
+    entries.forEach(a => writeMalCache(a.mal_id, a));
 }
 
 // Nueva función para buscar un solo anime si falla el bulk
@@ -1080,14 +967,16 @@ async function fetchMalById(id) {
     } catch (e) { return null; }
 }
 
-// Nueva función: Obtiene toda la temporada de Jikan en pocas peticiones (Bulk)
-async function fetchJikanSeason(year, season) {
+// Obtiene toda la temporada de Jikan en pocas peticiones (Bulk)
+// isComplete(results): callback opcional para cortar apenas se tienen todos los datos necesarios
+async function fetchJikanSeason(year, season, isComplete = null) {
     const jikanSeason = season.toLowerCase();
     let page = 1;
     let hasNext = true;
     let retriesOnPage = 0;
     const MAX_RETRIES_PER_PAGE = 4; // tras esto, abandonamos el bulk y confiamos en el fallback individual
     const results = {};
+    const pendingCache = [];
 
     while (hasNext && isLoading) {
         try {
@@ -1111,17 +1000,24 @@ async function fetchJikanSeason(year, season) {
             const data = await res.json();
             (data.data || []).forEach(anime => {
                 results[anime.mal_id] = anime;
-                saveMalCache(anime.mal_id, anime);
+                pendingCache.push(anime);
             });
 
             hasNext = data.pagination?.has_next_page;
+
+            // Salida temprana: ya tenemos todo lo que esta temporada necesita
+            if (isComplete && isComplete(results)) break;
+            if (!hasNext) break;
+
             page++;
-            await delay(600); // Delay pequeño es suficiente para paginación
+            await delay(400); // Jikan permite ~3 req/s
         } catch (e) {
             console.error("Jikan Season Error", e);
             break;
         }
     }
+
+    saveMalCacheBulk(pendingCache);
     return results;
 }
 
@@ -1165,31 +1061,38 @@ async function loadTop10() {
             if (!seasonData) {
                 renderSkeletons();
 
-                // Etapa 1: AniList → 0% a 30%
-updateProgress(5, 'Consultando...');
-const aniList = await fetchSeasonFromAniList(year, season);
-if (!isLoading) return;
-updateProgress(30, 'Datos obtenidos');
+                // Etapa 1: AniList y MAL corren EN PARALELO → 0% a 30%
+                updateProgress(5, 'Consultando...');
+                const neededCtx = { ready: false, ids: [] };
+                const malPromise = fetchJikanSeason(year, season, found =>
+                    neededCtx.ready && neededCtx.ids.every(id => found[id])
+                );
+                const aniList = await fetchSeasonFromAniList(year, season);
+                if (!isLoading) return;
+                updateProgress(30, 'Datos obtenidos');
 
-// ── FILTRAMOS CANDIDATOS ANTES DE FETCHEARE MAL ──
-const candidates = aniList.filter(ani => {
-    // Incluimos si:
-    // 1. Tiene score en AniList (aunque sea bajo)
-    // 2. O tiene mal_id válido (podría tener score solo en MAL)
-    // 3. O tiene score manual previo (opcional, pero útil)
-    const hasAlScore = ani.score && ani.score > 0;
-    const hasMalId   = ani.mal_id && ani.mal_id > 0;
-    const hasManual  = getManualScore(ani.mal_id) !== null;
+                // ── FILTRAMOS CANDIDATOS ANTES DE FETCHEARE MAL ──
+                const candidates = aniList.filter(ani => {
+                    // Incluimos si:
+                    // 1. Tiene score en AniList (aunque sea bajo)
+                    // 2. O tiene mal_id válido (podría tener score solo en MAL)
+                    // 3. O tiene score manual previo (opcional, pero útil)
+                    const hasAlScore = ani.score && ani.score > 0;
+                    const hasMalId   = ani.mal_id && ani.mal_id > 0;
+                    const hasManual  = getManualScore(ani.mal_id) !== null;
 
-    return hasAlScore || hasMalId || hasManual;
-});
+                    return hasAlScore || hasMalId || hasManual;
+                });
 
-updateProgress(32, `Filtrados ${candidates.length} animes con potencial score`);
+                // Le decimos al fetch de MAL qué IDs necesitamos (permite salida temprana)
+                neededCtx.ids = [...new Set(candidates.filter(a => a.mal_id).map(a => a.mal_id))];
+                neededCtx.ready = true;
 
-// ── OPTIMIZACIÓN: Usamos fetchJikanSeason en lugar de pedir 1 por 1 ──
-updateProgress(35, `Obteniendo datos de MAL (modo optimizado)...`);
-const malDataById = await fetchJikanSeason(year, season);
-if (!isLoading) return;
+                updateProgress(32, `Filtrados ${candidates.length} animes con potencial score`);
+
+                updateProgress(35, `Obteniendo datos de MAL (modo optimizado)...`);
+                const malDataById = await malPromise;
+                if (!isLoading) return;
 
 // ── FALLBACK: Buscar IDs faltantes individualmente ──
 const missingIds = [];
@@ -1212,7 +1115,7 @@ if (missingIds.length > 0) {
             saveMalCache(id, data);
         }
         updateProgress(60 + Math.floor(((i + 1) / missingIds.length) * 25), `Recuperando (${i+1}/${missingIds.length})`);
-        await delay(600); // Respetar rate limit
+        await delay(400); // Respetar rate limit (Jikan: ~3 req/s)
     }
 }
 
@@ -1312,11 +1215,6 @@ const enrichedList = candidates.map(ani => {
 
                 saveSeasonCache(key, seasonRanking);
 
-                // Sprint final
-                updateProgress(96);
-                await delay(300);
-                updateProgress(98);
-                await delay(250);
                 updateProgress(100, '¡Listo!');
                 setTimeout(() => {
                     progressContainer.style.display = 'none';
@@ -1548,5 +1446,5 @@ function updatePageButtons() {
 }
 
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9c30e57fddaff3fe',t:'MTc2OTI3MjAzOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
