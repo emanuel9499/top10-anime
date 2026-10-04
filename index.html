@@ -284,6 +284,27 @@ select.ctl { cursor: pointer; padding-right: 8px; }
 .empty h2 { color: var(--text); font-weight: 600; font-size: 1.2em; margin: 0 0 6px; }
 .empty p { margin: 0 0 16px; }
 
+.rate-notice {
+    margin-top: 12px; padding: 10px 14px; border-radius: 12px; font-size: .88em;
+    background: rgba(255,184,107,.1); border: 1px solid rgba(255,184,107,.35); color: #ffe2c2;
+    display: flex; align-items: center; gap: 8px;
+}
+.rate-notice b { color: #fff; }
+
+/* Modal */
+.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(5,7,12,.72); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 16px; }
+.modal { width: min(520px, 100%); background: var(--surface); border: 1px solid var(--line2); border-radius: 16px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+.modal h2 { margin: 0 0 8px; font-size: 1.15em; }
+.modal p { margin: 0 0 14px; color: var(--muted); font-size: .9em; line-height: 1.5; }
+.modal p b { color: var(--text); }
+.mfield { display: flex; flex-direction: column; gap: 6px; font-size: .85em; color: var(--muted); }
+.mfield .ctl { width: 100%; }
+.mnote { margin-top: 8px !important; font-size: .82em !important; min-height: 1.3em; }
+.mnote.ok { color: var(--ok); }
+.mnote.err { color: #ff9f8a; }
+.mactions { display: flex; gap: 8px; align-items: center; }
+.cfg-link { color: #c8d6ff; }
+
 footer { text-align: center; color: var(--dim); font-size: .78em; padding: 10px 0 30px; }
 footer kbd { background: var(--surface2); border: 1px solid var(--line2); border-radius: 4px; padding: 1px 5px; font-family: inherit; color: var(--muted); }
 
@@ -333,6 +354,7 @@ footer kbd { background: var(--surface2); border: 1px solid var(--line2); border
             <button class="btn icon" id="nextSeasonBtn" title="Temporada siguiente">›</button>
             <button class="btn primary" id="loadBtn">Cargar</button>
             <button class="btn icon" id="refreshBtn" title="Actualizar ignorando la caché">↻</button>
+            <button class="btn icon" id="settingsBtn" title="Fuente de puntajes MAL">⚙</button>
         </div>
     </div>
     <div class="progress" id="progress"><div class="progress-fill" id="progressFill"></div></div>
@@ -406,6 +428,8 @@ footer kbd { background: var(--surface2); border: 1px solid var(--line2); border
         <button class="btn small" data-page="next">Siguiente →</button>
     </nav>
 
+    <div class="rate-notice" id="rateNotice" hidden></div>
+
     <main>
         <div class="grid" id="grid"></div>
         <div class="empty" id="empty">
@@ -421,6 +445,23 @@ footer kbd { background: var(--surface2); border: 1px solid var(--line2); border
     </nav>
 
     <footer><span class="kb"><kbd>←</kbd> <kbd>→</kbd> cambiar página · <kbd>/</kbd> buscar · </span>Datos: Jikan (MyAnimeList) y AniList</footer>
+</div>
+
+<div class="modal-bg" id="settingsModal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="setTitle">
+        <h2 id="setTitle">Fuente de puntajes MAL</h2>
+        <p>Jikan (la API no oficial) está fallando desde fines de agosto de 2026. Para usar la <b>API oficial de MyAnimeList</b> hace falta un proxy propio (Cloudflare Worker gratuito). Pegá acá su URL.</p>
+        <label class="mfield">URL del proxy
+            <input class="ctl" id="proxyInput" type="url" placeholder="https://mal-proxy.tu-usuario.workers.dev" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="mnote" id="proxyNote">Si lo dejás vacío se usa Jikan.</p>
+        <div class="mactions">
+            <button class="btn" id="proxyTestBtn">Probar</button>
+            <span style="flex:1"></span>
+            <button class="btn" id="settingsCancel">Cancelar</button>
+            <button class="btn primary" id="settingsSave">Guardar</button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -483,7 +524,7 @@ TYPE_LABEL.MUSIC = 'Music';
 
 const DEFAULT_PREFS = {
     types: TYPES.filter(t => t.def).map(t => t.id),
-    sort: 'avg', scoreMode: 'normal', minPop: 0, both: false, lang: 'en', perPage: 10, topN: 10
+    sort: 'avg', scoreMode: 'normal', minPop: 0, both: false, lang: 'en', perPage: 10, topN: 10, malProxy: ''
 };
 
 function loadPrefs() {
@@ -528,14 +569,13 @@ const MAX_MAL = 500;
 
 const seasonKey = (y, s) => `${SEASON_PREFIX}${y}_${s}`;
 
-function seasonTTL(y, s, complete) {
-    if (!complete) return 30 * MIN;
+function seasonTTL(y, s) {
     return isSettled(y, s) ? 21 * DAY : 4 * HOUR;
 }
 function readSeasonCache(y, s) {
     const c = store.get(seasonKey(y, s));
     if (!c || !Array.isArray(c.items)) return null;
-    if (Date.now() - c.t > seasonTTL(y, s, c.complete)) { store.del(seasonKey(y, s)); return null; }
+    if (Date.now() - c.t > seasonTTL(y, s)) { store.del(seasonKey(y, s)); return null; }
     return c;
 }
 function pruneByTime(prefix, max) {
@@ -543,8 +583,8 @@ function pruneByTime(prefix, max) {
     if (entries.length <= max) return;
     entries.sort((a, b) => a.t - b.t).slice(0, entries.length - max).forEach(e => store.del(e.k));
 }
-function writeSeasonCache(y, s, items, complete) {
-    const payload = { t: Date.now(), complete, items };
+function writeSeasonCache(y, s, items, complete, t = Date.now()) {
+    const payload = { t, complete, items };
     if (!store.set(seasonKey(y, s), payload)) {
         pruneByTime(SEASON_PREFIX, 8);
         pruneByTime(MAL_PREFIX, 100);
@@ -643,10 +683,10 @@ const Jikan = (() => {
 // ════════════════════════════════════════════════════════════════
 // AniList
 // ════════════════════════════════════════════════════════════════
-const AL_QUERY = `query ($y: Int, $s: MediaSeason, $p: Int) {
+const AL_QUERY = `query ($y: Int, $s: MediaSeason, $p: Int, $f: [MediaFormat]) {
   Page(page: $p, perPage: 50) {
     pageInfo { hasNextPage lastPage }
-    media(seasonYear: $y, season: $s, type: ANIME, isAdult: false, sort: POPULARITY_DESC) {
+    media(seasonYear: $y, season: $s, type: ANIME, isAdult: false, format_in: $f, sort: POPULARITY_DESC) {
       id idMal
       title { english romaji native }
       averageScore popularity format episodes status genres
@@ -656,8 +696,66 @@ const AL_QUERY = `query ($y: Int, $s: MediaSeason, $p: Int) {
   }
 }`;
 
+// ── Limitador global de AniList ─────────────────────────────────
+//   AniList permite ~30 req/min (modo degradado) y bloquea ~1 min al pasarse.
+//   Además sus respuestas 429 no traen CORS → el navegador ve un error de red.
+//   Por eso: cola secuencial, tope por minuto, y ante un 429 (o error de red)
+//   pausa global de 60 s que sobrevive a recargar la página.
+const AniLimiter = (() => {
+    const GAP = 800;          // separación mínima entre requests
+    const PER_MIN = 24;       // margen debajo del límite real (30/min)
+    const LOG_KEY = 'AR2_al_log', COOL_KEY = 'AR2_al_cool';
+    let chain = Promise.resolve();
+    let last = 0;
+    let log = (store.get(LOG_KEY) || []).filter(t => Date.now() - t < 60000);
+    let cooldownUntil = store.get(COOL_KEY) || 0;
+
+    function slot(signal) {
+        const p = chain.then(async () => {
+            for (;;) {
+                if (signal?.aborted) { rateNotice(0); return; }
+                const now = Date.now();
+                log = log.filter(t => now - t < 60000);
+                let wait = Math.max(last + GAP - now, cooldownUntil - now, 0);
+                if (log.length >= PER_MIN) wait = Math.max(wait, log[0] + 60000 - now + 100);
+                if (wait <= 0) break;
+                if (wait > 1500) rateNotice(Math.ceil(wait / 1000));
+                await sleep(Math.min(wait, 1000));
+            }
+            rateNotice(0);
+            last = Date.now();
+            log.push(last);
+            store.set(LOG_KEY, log);
+        });
+        chain = p.catch(() => {});
+        return p;
+    }
+    function penalize(ms) {
+        cooldownUntil = Math.max(cooldownUntil, Date.now() + ms);
+        store.set(COOL_KEY, cooldownUntil);
+    }
+    function sync(res) {
+        // Si AniList expone los headers de rate limit, los respetamos
+        const rem = parseInt(res.headers.get('X-RateLimit-Remaining'));
+        const reset = parseInt(res.headers.get('X-RateLimit-Reset'));
+        if (!isNaN(rem) && rem <= 2) penalize(!isNaN(reset) ? Math.max(0, reset * 1000 - Date.now()) + 500 : 30000);
+    }
+    return { slot, penalize, sync };
+})();
+
+function rateNotice(sec) {
+    const el = $('#rateNotice');
+    if (!el) return;
+    if (sec > 0) {
+        el.hidden = false;
+        el.innerHTML = `<span class="dot warn"></span>Límite de consultas de AniList alcanzado — reanudando en <b>${sec} s</b>. Las temporadas ya cargadas se ven al instante desde la caché.`;
+    } else el.hidden = true;
+}
+
 async function alRequest(vars, signal) {
     for (let attempt = 0; ; attempt++) {
+        await AniLimiter.slot(signal);
+        throwIfAborted(signal);
         let res;
         try {
             res = await fetchT('https://graphql.anilist.co', {
@@ -668,15 +766,20 @@ async function alRequest(vars, signal) {
             });
         } catch (e) {
             if (signal?.aborted) throw e;
-            if (attempt >= 3) throw e;
-            await sleep(1000 * (attempt + 1));
+            // Casi siempre es un 429 disfrazado por CORS → pausa larga
+            AniLimiter.penalize(60000);
+            if (attempt >= 1) throw new Error('AniList no responde (posible límite de consultas)');
             continue;
         }
-        if (res.status === 429 || res.status >= 500) {
-            if (attempt >= 3) throw new Error('AniList ' + res.status);
-            const ra = parseFloat(res.headers.get('Retry-After'));
-            await sleep(!isNaN(ra) ? ra * 1000 : 2000 * (attempt + 1));
-            throwIfAborted(signal);
+        AniLimiter.sync(res);
+        if (res.status === 429) {
+            AniLimiter.penalize(60000);
+            if (attempt >= 1) throw new Error('AniList 429 (límite de consultas)');
+            continue;
+        }
+        if (res.status >= 500) {
+            AniLimiter.penalize(3000 * (attempt + 1));
+            if (attempt >= 2) throw new Error('AniList ' + res.status);
             continue;
         }
         if (!res.ok) throw new Error('AniList ' + res.status);
@@ -686,25 +789,20 @@ async function alRequest(vars, signal) {
     }
 }
 
-async function fetchAniList(year, season, signal) {
-    const vars = { y: year, s: season.toUpperCase() };
-    const first = await alRequest({ ...vars, p: 1 }, signal);
-    const media = [...first.media];
+const AL_FORMATS = ['TV', 'TV_SHORT', 'ONA', 'MOVIE', 'OVA', 'SPECIAL'];
+const AL_MAX_PAGES = 6;   // 300 más populares: el resto casi nunca tiene puntaje
 
-    if (first.pageInfo.hasNextPage) {
-        // Páginas restantes en paralelo
-        const lastPage = Math.min(Math.max(first.pageInfo.lastPage || 2, 2), 10);
-        const pages = [];
-        for (let p = 2; p <= lastPage; p++) pages.push(p);
-        const rest = await Promise.all(pages.map(p => alRequest({ ...vars, p }, signal)));
-        rest.forEach(r => media.push(...r.media));
-        // Por si lastPage vino subestimado
-        let p = lastPage, lastRes = rest[rest.length - 1];
-        while (lastRes?.pageInfo?.hasNextPage && p < 12) {
-            p++;
-            lastRes = await alRequest({ ...vars, p }, signal);
-            media.push(...lastRes.media);
-        }
+async function fetchAniList(year, season, signal) {
+    const vars = { y: year, s: season.toUpperCase(), f: AL_FORMATS };
+    const media = [];
+    // Secuencial a propósito: ráfagas en paralelo disparan el 429
+    for (let p = 1; p <= AL_MAX_PAGES; p++) {
+        const page = await alRequest({ ...vars, p }, signal);
+        media.push(...page.media);
+        setProgress(8 + 20 * p / Math.min(page.pageInfo.lastPage || p, AL_MAX_PAGES));
+        if (!page.pageInfo.hasNextPage) break;
+        // Página casi sin puntajes → lo que sigue es todavía menos popular, cortamos
+        if (p >= 2 && page.media.filter(m => m.averageScore).length < 5) break;
     }
 
     const seen = new Set();
@@ -728,45 +826,124 @@ async function fetchAniList(year, season, signal) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// MAL (vía Jikan) — completa it.mal en los items de AniList
-// Devuelve { ok, down }
+// MAL — dos fuentes:
+//   1) API oficial de MAL vía proxy propio (Cloudflare Worker) → 1 request por temporada
+//   2) Jikan (no oficial, inestable desde ago-2026) → fallback, falla rápido
+// Devuelve { ok, down, source }
 // ════════════════════════════════════════════════════════════════
-async function fetchMal(items, year, season, { signal, onUpdate, onProgress }) {
+const MAL_FIELDS = 'mean,num_list_users,num_episodes,alternative_titles';
+const slimOfficial = n => ({
+    score: n.mean ?? null,
+    members: n.num_list_users ?? null,
+    eps: n.num_episodes || null,
+    t: n.title ?? null,
+    te: n.alternative_titles?.en || null
+});
+
+async function malOfficialGet(path, signal) {
+    const base = prefs.malProxy.replace(/\/+$/, '');
+    for (let attempt = 0; ; attempt++) {
+        let res;
+        try {
+            res = await fetchT(base + path, { signal, timeout: 15000 });
+        } catch (e) {
+            if (signal?.aborted) throw e;
+            if (attempt >= 1) throw e;
+            await sleep(800);
+            continue;
+        }
+        if (res.status === 404) return null;
+        if (res.status === 429 || res.status >= 500) {
+            if (attempt >= 2) throw new Error('MAL ' + res.status);
+            await sleep(1500 * (attempt + 1));
+            throwIfAborted(signal);
+            continue;
+        }
+        if (!res.ok) throw new Error('MAL ' + res.status);
+        return res.json();
+    }
+}
+
+// Ejecuta tareas con concurrencia limitada
+async function pool(list, n, fn) {
+    let i = 0;
+    const workers = Array.from({ length: Math.min(n, list.length) }, async () => {
+        while (i < list.length) await fn(list[i++]);
+    });
+    await Promise.all(workers);
+}
+
+// Jikan caído recientemente → no lo volvemos a esperar en cada temporada
+let jikanDownUntil = 0;
+
+async function seasonFromOfficial(byId, apply, year, season, { signal, onUpdate, onProgress }) {
+    let path = `/v2/anime/season/${year}/${season}?limit=500&nsfw=true&fields=${MAL_FIELDS}`;
+    let page = 0;
+    while (path && page < 4) {
+        const j = await malOfficialGet(path, signal);
+        (j?.data || []).forEach(({ node }) => byId.has(node.id) && apply(node.id, slimOfficial(node)));
+        page++;
+        onProgress(30 + 40 * Math.min(page, 2) / 2, 'MAL: temporada recibida');
+        onUpdate();
+        const next = j?.paging?.next;
+        path = next ? next.replace(/^https?:\/\/api\.myanimelist\.net/, '') : null;
+    }
+}
+
+async function seasonFromJikan(byId, apply, year, season, { signal, onUpdate, onProgress }) {
+    let ok = true, pagesDone = 0, totalPages = 1;
+    const handlePage = json => {
+        (json?.data || []).forEach(a => byId.has(a.mal_id) && apply(a.mal_id, slimMal(a)));
+        pagesDone++;
+        onProgress(30 + 45 * pagesDone / totalPages, `MAL (Jikan): página ${pagesDone}/${totalPages}`);
+        onUpdate();
+    };
+    // Primera página: timeout corto y sin reintentos → si Jikan está caído nos enteramos en segundos
+    const first = await Jikan.get(`/seasons/${year}/${season}?page=1`, { signal, retries: 0, timeout: 8000 });
+    totalPages = Math.min(first?.pagination?.last_visible_page || 1, 15);
+    handlePage(first);
+    const jobs = [];
+    for (let p = 2; p <= totalPages; p++) {
+        jobs.push(Jikan.get(`/seasons/${year}/${season}?page=${p}`, { signal, retries: 2, timeout: 10000 })
+            .then(handlePage)
+            .catch(e => { if (signal.aborted) throw e; ok = false; }));
+    }
+    await Promise.all(jobs);
+    return ok;
+}
+
+async function fetchMal(items, year, season, { signal, onUpdate, onProgress, forceJikan = false }) {
     const byId = new Map();
     items.forEach(it => {
         if (!it.mal_id) return;
         if (!byId.has(it.mal_id)) byId.set(it.mal_id, []);
         byId.get(it.mal_id).push(it);
     });
-    if (!byId.size) return { ok: true, down: false };
+    if (!byId.size) return { ok: true, down: false, source: null };
 
     const apply = (id, d) => byId.get(id)?.forEach(it => { it.mal = d; });
-    let ok = true, down = false;
+    const opts = { signal, onUpdate, onProgress };
+    let ok = true, source = null;
 
-    // 1) Listado de la temporada (≈25 por página). Página 1 → sabemos cuántas hay → resto en paralelo.
-    let pagesDone = 0, totalPages = 1;
-    const handlePage = json => {
-        (json?.data || []).forEach(a => byId.has(a.mal_id) && apply(a.mal_id, slimMal(a)));
-        pagesDone++;
-        onProgress(30 + 45 * pagesDone / totalPages, `MAL: página ${pagesDone}/${totalPages}`);
-        onUpdate();
-    };
-    try {
-        const first = await Jikan.get(`/seasons/${year}/${season}?page=1`, { signal });
-        totalPages = Math.min(first?.pagination?.last_visible_page || 1, 15);
-        handlePage(first);
-        if (totalPages > 1) {
-            const jobs = [];
-            for (let p = 2; p <= totalPages; p++) {
-                jobs.push(Jikan.get(`/seasons/${year}/${season}?page=${p}`, { signal })
-                    .then(handlePage)
-                    .catch(e => { if (signal.aborted) throw e; ok = false; }));
-            }
-            await Promise.all(jobs);
+    // 1) Listado de la temporada
+    if (prefs.malProxy) {
+        try {
+            await seasonFromOfficial(byId, apply, year, season, opts);
+            source = 'official';
+        } catch (e) {
+            if (signal.aborted) throw e;
+            console.warn('MAL oficial (proxy) falló, probando Jikan:', e);
         }
-    } catch (e) {
-        if (signal.aborted) throw e;
-        ok = false; down = true;
+    }
+    if (!source && (forceJikan || Date.now() > jikanDownUntil)) {
+        try {
+            ok = await seasonFromJikan(byId, apply, year, season, opts);
+            source = 'jikan';
+        } catch (e) {
+            if (signal.aborted) throw e;
+            console.warn('Jikan no responde:', e);
+            jikanDownUntil = Date.now() + 10 * MIN;
+        }
     }
 
     // 2) Faltantes (AniList y MAL a veces ubican el anime en temporadas distintas)
@@ -777,27 +954,31 @@ async function fetchMal(items, year, season, { signal, onUpdate, onProgress }) {
         if (c) apply(id, c); else toFetch.push(id);
     }
     onUpdate();
-    if (down) return { ok: false, down };   // Jikan caído: no seguimos martillando
+    if (!source) return { ok: false, down: true, source: null };   // ninguna fuente responde
 
     toFetch.sort((a, b) => byId.get(b)[0].pop - byId.get(a)[0].pop);   // los más populares primero
-    const LIMIT = 60;
+    const LIMIT = source === 'official' ? 120 : 60;
     const batch = toFetch.slice(0, LIMIT);
     if (toFetch.length > LIMIT) ok = false;
     let done = 0;
-    await Promise.all(batch.map(id =>
-        Jikan.get(`/anime/${id}`, { signal, retries: 2 })
-            .then(j => {
-                const d = j?.data ? slimMal(j.data) : { score: null, members: null };
-                apply(id, d);
-                writeMalCache(id, d);
-            })
-            .catch(e => { if (signal.aborted) throw e; ok = false; })
-            .finally(() => {
-                done++;
-                if (!signal.aborted) { onProgress(75 + 25 * done / batch.length, `MAL: faltantes ${done}/${batch.length}`); onUpdate(); }
-            })
-    ));
-    return { ok, down };
+    const getOne = source === 'official'
+        ? async id => { const n = await malOfficialGet(`/v2/anime/${id}?fields=${MAL_FIELDS}`, signal); return n ? slimOfficial(n) : null; }
+        : async id => { const j = await Jikan.get(`/anime/${id}`, { signal, retries: 2, timeout: 10000 }); return j?.data ? slimMal(j.data) : null; };
+
+    await pool(batch, source === 'official' ? 4 : 3, async id => {
+        try {
+            const d = (await getOne(id)) || { score: null, members: null };
+            apply(id, d);
+            writeMalCache(id, d);
+        } catch (e) {
+            if (signal.aborted) throw e;
+            ok = false;
+        } finally {
+            done++;
+            if (!signal.aborted) { onProgress(75 + 25 * done / batch.length, `MAL: faltantes ${done}/${batch.length}`); onUpdate(); }
+        }
+    });
+    return { ok, down: false, source };
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -807,6 +988,7 @@ const state = {
     year: null, season: null,
     items: [],
     malState: 'idle',       // idle | loading | done | partial | down
+    malSource: null,        // official | jikan
     fromCache: null,        // timestamp si vino de caché
     ranking: [],
     loaded: false
@@ -1002,20 +1184,21 @@ function renderStatus() {
     const label = `<b>${SEASON_NAME[state.season] || ''} ${state.year || ''}</b>`;
     const cacheInfo = state.fromCache ? ` · caché de hace ${timeAgo(state.fromCache)}` : '';
     const missing = state.items.filter(it => it.mal_id && !it.mal).length;
+    const srcInfo = state.malSource === 'official' ? ' (oficial)' : state.malSource === 'jikan' ? ' (Jikan)' : '';
     retry.hidden = true;
     switch (state.malState) {
         case 'loading':
             el.innerHTML = `<span class="dot load"></span>${label} · AniList listo · ${esc(malProgress || 'cargando MAL…')}`;
             break;
         case 'done':
-            el.innerHTML = `<span class="dot ok"></span>${label} · MAL + AniList${cacheInfo}`;
+            el.innerHTML = `<span class="dot ok"></span>${label} · MAL${srcInfo} + AniList${cacheInfo}`;
             break;
         case 'partial':
             el.innerHTML = `<span class="dot warn"></span>${label} · MAL incompleto (${missing} sin datos)${cacheInfo}`;
             retry.hidden = false;
             break;
         case 'down':
-            el.innerHTML = `<span class="dot warn"></span>${label} · MAL no responde, mostrando AniList${cacheInfo}`;
+            el.innerHTML = `<span class="dot warn"></span>${label} · MAL no responde, mostrando solo AniList${cacheInfo}${prefs.malProxy ? '' : ' · <a href="#" class="cfg-link" data-open-settings>configurar API oficial</a>'}`;
             retry.hidden = false;
             break;
         default:
@@ -1072,7 +1255,7 @@ async function loadSeason({ force = false } = {}) {
     abortCtl = new AbortController();
     const signal = abortCtl.signal;
 
-    Object.assign(state, { year, season, items: [], ranking: [], malState: 'idle', fromCache: null, loaded: false });
+    Object.assign(state, { year, season, items: [], ranking: [], malState: 'idle', malSource: null, fromCache: null, loaded: false });
     currentPage = 1;
     clearSearch(false);
     malProgress = '';
@@ -1081,6 +1264,7 @@ async function loadSeason({ force = false } = {}) {
     if (cached) {
         state.items = cached.items;
         state.fromCache = cached.t;
+        state.alT = cached.t;
         state.malState = cached.complete ? 'done' : 'partial';
         state.loaded = true;
         setProgress(100);
@@ -1098,13 +1282,18 @@ async function loadSeason({ force = false } = {}) {
     } catch (e) {
         if (seq !== loadSeq) return;
         console.error('AniList', e);
+        rateNotice(0);
         setProgress(100);
         grid.innerHTML = '';
         emptyEl.hidden = false;
-        emptyEl.innerHTML = `<h2>No se pudo cargar la temporada</h2><p>AniList no respondió (${esc(e.message)}).</p><button class="btn primary" onclick="loadSeason({force:true})">Reintentar</button>`;
+        emptyEl.innerHTML = `<h2>No se pudo cargar la temporada</h2><p>AniList no respondió (${esc(e.message)}).</p><p>Esperá un minuto antes de reintentar: AniList bloquea temporalmente si recibe muchas consultas seguidas.</p><button class="btn primary" onclick="loadSeason()">Reintentar</button>`;
         return;
     }
     if (seq !== loadSeq) return;
+
+    // Guardamos AniList ya mismo: si cambiás de temporada antes de que termine MAL, no se vuelve a pedir
+    state.alT = Date.now();
+    writeSeasonCache(year, season, state.items, false, state.alT);
 
     // Mostramos YA el ranking con AniList; MAL se va sumando a medida que llega
     state.loaded = true;
@@ -1115,7 +1304,14 @@ async function loadSeason({ force = false } = {}) {
     await runMal(seq, signal);
 }
 
-async function runMal(seq, signal) {
+// Al navegar rápido con ‹ › solo se carga la temporada donde frenás
+let loadDebounce = null;
+function loadSeasonDebounced() {
+    clearTimeout(loadDebounce);
+    loadDebounce = setTimeout(() => loadSeason(), 450);
+}
+
+async function runMal(seq, signal, forceJikan = false) {
     const { year, season } = state;
     state.malState = 'loading';
     renderStatus();
@@ -1124,12 +1320,13 @@ async function runMal(seq, signal) {
         result = await fetchMal(state.items, year, season, {
             signal,
             onUpdate: () => { if (seq === loadSeq) scheduleRefresh(); },
-            onProgress: (pct, msg) => { if (seq === loadSeq) setProgress(pct, msg); }
+            onProgress: (pct, msg) => { if (seq === loadSeq) setProgress(pct, msg); },
+            forceJikan
         });
     } catch (e) {
         if (signal.aborted) return;
         console.error('MAL', e);
-        result = { ok: false, down: true };
+        result = { ok: false, down: true, source: null };
     }
     if (seq !== loadSeq) return;
 
@@ -1137,7 +1334,8 @@ async function runMal(seq, signal) {
     const complete = result.ok && !missing;
     state.malState = complete ? 'done' : result.down ? 'down' : 'partial';
     state.fromCache = null;
-    writeSeasonCache(year, season, state.items, complete);
+    state.malSource = result.source;
+    writeSeasonCache(year, season, state.items, complete, state.alT || Date.now());
     setProgress(100);
     clearTimeout(renderTimer); renderTimer = null;
     refresh();
@@ -1149,7 +1347,7 @@ function retryMal() {
     abortCtl = new AbortController();
     const seq = ++loadSeq;
     setProgress(30, 'reintentando MAL…');
-    runMal(seq, abortCtl.signal);
+    runMal(seq, abortCtl.signal, true);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1202,7 +1400,7 @@ function shiftSeason(dir) {
     if (![...$('#year').options].some(o => +o.value === y)) return;
     $('#year').value = y;
     $('#season').value = SEASONS[i];
-    loadSeason();
+    loadSeasonDebounced();
 }
 
 function goPage(dir) {
@@ -1256,9 +1454,39 @@ function init() {
     $('#refreshBtn').addEventListener('click', () => loadSeason({ force: true }));
     $('#prevSeasonBtn').addEventListener('click', () => shiftSeason(-1));
     $('#nextSeasonBtn').addEventListener('click', () => shiftSeason(1));
-    $('#season').addEventListener('change', () => state.year && loadSeason());
-    $('#year').addEventListener('change', () => state.year && loadSeason());
+    $('#season').addEventListener('change', () => state.year && loadSeasonDebounced());
+    $('#year').addEventListener('change', () => state.year && loadSeasonDebounced());
     $('#retryMalBtn').addEventListener('click', retryMal);
+
+    // Configuración del proxy MAL
+    const modal = $('#settingsModal'), pin = $('#proxyInput'), note = $('#proxyNote');
+    const setNote = (txt, cls = '') => { note.textContent = txt; note.className = 'mnote ' + cls; };
+    const openSettings = () => { pin.value = prefs.malProxy; setNote('Si lo dejás vacío se usa Jikan.'); modal.hidden = false; pin.focus(); };
+    const closeSettings = () => { modal.hidden = true; };
+    $('#settingsBtn').addEventListener('click', openSettings);
+    document.addEventListener('click', e => { if (e.target.closest('[data-open-settings]')) { e.preventDefault(); openSettings(); } });
+    $('#settingsCancel').addEventListener('click', closeSettings);
+    modal.addEventListener('click', e => { if (e.target === modal) closeSettings(); });
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); e.stopPropagation(); });
+    $('#proxyTestBtn').addEventListener('click', async () => {
+        const url = pin.value.trim().replace(/\/+$/, '');
+        if (!url) return setNote('Ingresá una URL.', 'err');
+        setNote('Probando…');
+        try {
+            const res = await fetchT(`${url}/v2/anime/52991?fields=mean`, { timeout: 12000 });
+            const j = res.ok ? await res.json() : null;
+            if (j?.mean) setNote(`✓ Funciona (Frieren: ${j.mean} en MAL).`, 'ok');
+            else setNote(`✗ El proxy respondió ${res.status}. Revisá el Client ID en el Worker.`, 'err');
+        } catch (e) {
+            setNote('✗ No se pudo conectar (URL incorrecta o CORS).', 'err');
+        }
+    });
+    $('#settingsSave').addEventListener('click', () => {
+        prefs.malProxy = pin.value.trim().replace(/\/+$/, '');
+        savePrefs();
+        closeSettings();
+        if (state.loaded && state.malState !== 'done') retryMal();
+    });
 
     // Búsqueda
     $('#searchInput').addEventListener('input', e => {
