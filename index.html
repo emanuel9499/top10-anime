@@ -291,20 +291,6 @@ select.ctl { cursor: pointer; padding-right: 8px; }
 }
 .rate-notice b { color: #fff; }
 
-/* Modal */
-.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(5,7,12,.72); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 16px; }
-.modal { width: min(520px, 100%); background: var(--surface); border: 1px solid var(--line2); border-radius: 16px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
-.modal h2 { margin: 0 0 8px; font-size: 1.15em; }
-.modal p { margin: 0 0 14px; color: var(--muted); font-size: .9em; line-height: 1.5; }
-.modal p b { color: var(--text); }
-.mfield { display: flex; flex-direction: column; gap: 6px; font-size: .85em; color: var(--muted); }
-.mfield .ctl { width: 100%; }
-.mnote { margin-top: 8px !important; font-size: .82em !important; min-height: 1.3em; }
-.mnote.ok { color: var(--ok); }
-.mnote.err { color: #ff9f8a; }
-.mactions { display: flex; gap: 8px; align-items: center; }
-.cfg-link { color: #c8d6ff; }
-
 footer { text-align: center; color: var(--dim); font-size: .78em; padding: 10px 0 30px; }
 footer kbd { background: var(--surface2); border: 1px solid var(--line2); border-radius: 4px; padding: 1px 5px; font-family: inherit; color: var(--muted); }
 
@@ -354,7 +340,6 @@ footer kbd { background: var(--surface2); border: 1px solid var(--line2); border
             <button class="btn icon" id="nextSeasonBtn" title="Temporada siguiente">›</button>
             <button class="btn primary" id="loadBtn">Cargar</button>
             <button class="btn icon" id="refreshBtn" title="Actualizar ignorando la caché">↻</button>
-            <button class="btn icon" id="settingsBtn" title="Fuente de puntajes MAL">⚙</button>
         </div>
     </div>
     <div class="progress" id="progress"><div class="progress-fill" id="progressFill"></div></div>
@@ -447,23 +432,6 @@ footer kbd { background: var(--surface2); border: 1px solid var(--line2); border
     <footer><span class="kb"><kbd>←</kbd> <kbd>→</kbd> cambiar página · <kbd>/</kbd> buscar · </span>Datos: Jikan (MyAnimeList) y AniList</footer>
 </div>
 
-<div class="modal-bg" id="settingsModal" hidden>
-    <div class="modal" role="dialog" aria-labelledby="setTitle">
-        <h2 id="setTitle">Fuente de puntajes MAL</h2>
-        <p>Jikan (la API no oficial) está fallando desde fines de agosto de 2026. Para usar la <b>API oficial de MyAnimeList</b> hace falta un proxy propio (Cloudflare Worker gratuito). Pegá acá su URL.</p>
-        <label class="mfield">URL del proxy
-            <input class="ctl" id="proxyInput" type="url" placeholder="https://mal-proxy.tu-usuario.workers.dev" autocomplete="off" spellcheck="false">
-        </label>
-        <p class="mnote" id="proxyNote">Si lo dejás vacío se usa Jikan.</p>
-        <div class="mactions">
-            <button class="btn" id="proxyTestBtn">Probar</button>
-            <span style="flex:1"></span>
-            <button class="btn" id="settingsCancel">Cancelar</button>
-            <button class="btn primary" id="settingsSave">Guardar</button>
-        </div>
-    </div>
-</div>
-
 <script>
 'use strict';
 
@@ -524,7 +492,7 @@ TYPE_LABEL.MUSIC = 'Music';
 
 const DEFAULT_PREFS = {
     types: TYPES.filter(t => t.def).map(t => t.id),
-    sort: 'avg', scoreMode: 'normal', minPop: 0, both: false, lang: 'en', perPage: 10, topN: 10, malProxy: ''
+    sort: 'avg', scoreMode: 'normal', minPop: 0, both: false, lang: 'en', perPage: 10, topN: 10
 };
 
 function loadPrefs() {
@@ -831,6 +799,9 @@ async function fetchAniList(year, season, signal) {
 //   2) Jikan (no oficial, inestable desde ago-2026) → fallback, falla rápido
 // Devuelve { ok, down, source }
 // ════════════════════════════════════════════════════════════════
+// Proxy propio (Cloudflare Worker) hacia la API oficial de MAL
+const MAL_PROXY = 'https://mal-proxy.16bppcsxa.workers.dev';
+
 const MAL_FIELDS = 'mean,num_list_users,num_episodes,alternative_titles';
 const slimOfficial = n => ({
     score: n.mean ?? null,
@@ -841,7 +812,7 @@ const slimOfficial = n => ({
 });
 
 async function malOfficialGet(path, signal) {
-    const base = prefs.malProxy.replace(/\/+$/, '');
+    const base = MAL_PROXY;
     for (let attempt = 0; ; attempt++) {
         let res;
         try {
@@ -926,7 +897,7 @@ async function fetchMal(items, year, season, { signal, onUpdate, onProgress, for
     let ok = true, source = null;
 
     // 1) Listado de la temporada
-    if (prefs.malProxy) {
+    if (MAL_PROXY) {
         try {
             await seasonFromOfficial(byId, apply, year, season, opts);
             source = 'official';
@@ -1198,7 +1169,7 @@ function renderStatus() {
             retry.hidden = false;
             break;
         case 'down':
-            el.innerHTML = `<span class="dot warn"></span>${label} · MAL no responde, mostrando solo AniList${cacheInfo}${prefs.malProxy ? '' : ' · <a href="#" class="cfg-link" data-open-settings>configurar API oficial</a>'}`;
+            el.innerHTML = `<span class="dot warn"></span>${label} · MAL no responde, mostrando solo AniList${cacheInfo}`;
             retry.hidden = false;
             break;
         default:
@@ -1458,35 +1429,6 @@ function init() {
     $('#year').addEventListener('change', () => state.year && loadSeasonDebounced());
     $('#retryMalBtn').addEventListener('click', retryMal);
 
-    // Configuración del proxy MAL
-    const modal = $('#settingsModal'), pin = $('#proxyInput'), note = $('#proxyNote');
-    const setNote = (txt, cls = '') => { note.textContent = txt; note.className = 'mnote ' + cls; };
-    const openSettings = () => { pin.value = prefs.malProxy; setNote('Si lo dejás vacío se usa Jikan.'); modal.hidden = false; pin.focus(); };
-    const closeSettings = () => { modal.hidden = true; };
-    $('#settingsBtn').addEventListener('click', openSettings);
-    document.addEventListener('click', e => { if (e.target.closest('[data-open-settings]')) { e.preventDefault(); openSettings(); } });
-    $('#settingsCancel').addEventListener('click', closeSettings);
-    modal.addEventListener('click', e => { if (e.target === modal) closeSettings(); });
-    modal.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); e.stopPropagation(); });
-    $('#proxyTestBtn').addEventListener('click', async () => {
-        const url = pin.value.trim().replace(/\/+$/, '');
-        if (!url) return setNote('Ingresá una URL.', 'err');
-        setNote('Probando…');
-        try {
-            const res = await fetchT(`${url}/v2/anime/52991?fields=mean`, { timeout: 12000 });
-            const j = res.ok ? await res.json() : null;
-            if (j?.mean) setNote(`✓ Funciona (Frieren: ${j.mean} en MAL).`, 'ok');
-            else setNote(`✗ El proxy respondió ${res.status}. Revisá el Client ID en el Worker.`, 'err');
-        } catch (e) {
-            setNote('✗ No se pudo conectar (URL incorrecta o CORS).', 'err');
-        }
-    });
-    $('#settingsSave').addEventListener('click', () => {
-        prefs.malProxy = pin.value.trim().replace(/\/+$/, '');
-        savePrefs();
-        closeSettings();
-        if (state.loaded && state.malState !== 'done') retryMal();
-    });
 
     // Búsqueda
     $('#searchInput').addEventListener('input', e => {
